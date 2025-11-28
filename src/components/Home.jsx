@@ -9,17 +9,12 @@ export default function Home({ onChangeSection }) {
           <h1 className="text-3xl md:text-4xl font-bold tracking-tight mb-3">
             <span className="text-yellow-300">
             Electricidad &</span>{" "}
-            <span className="text-primary-light">
-              Luz y óptica
-            </span>
           </h1>
           <p className="text-sm md:text-base text-gray-300 mb-4">
             Explora, aprende y experimenta los conceptos clave de{" "}
             <span className="font-semibold text-yellow-500">
               Electricidad
             </span>{" "}
-            y{" "}
-            <span className="font-semibold text-primary-light">Óptica</span>{" "}
             usando simuladores 2D/3D, calculadoras y fórmulas renderizadas.
           </p>
           <p className="text-xs md:text-sm text-gray-400 mb-4">
@@ -31,8 +26,6 @@ export default function Home({ onChangeSection }) {
               { label: "Ley de Coulomb", section: "electricidad" },
               { label: "Campo Eléctrico", section: "electricidad" },
               { label: "Ley de Ohm", section: "electricidad" },
-              { label: "Snell (Refracción)", section: "optica" },
-              { label: "Lente delgada", section: "optica" },
             ].map((btn) => (
               <button
                 key={btn.label}
@@ -60,12 +53,6 @@ export default function Home({ onChangeSection }) {
               <span>⚡</span>
               <span>
                 <span className="font-semibold">Electricidad:</span> Coulomb, Campo, Potencial, Ley de Ohm y Circuitos.
-              </span>
-            </li>
-            <li className="flex gap-2">
-              <span>💡</span>
-              <span>
-                <span className="font-semibold">Óptica:</span> Luz, espectro, intensidad, reflexión y refracción (Snell), interferencia y lentes delgadas.
               </span>
             </li>
           </ul>

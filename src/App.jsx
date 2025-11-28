@@ -2,7 +2,6 @@ import React, { useEffect, useState } from "react";
 import Navbar from "./components/Navbar";
 import Home from "./components/Home";
 import Electricidad from "./components/Electricidad";
-import Optica from "./components/Optica";
 
 export default function App() {
   const [section, setSection] = useState("inicio");
@@ -29,8 +28,6 @@ export default function App() {
     switch (section) {
       case "electricidad":
         return <Electricidad />;
-      case "optica":
-        return <Optica />;
       default:
         return <Home onChangeSection={setSection} />;
     }
@@ -46,7 +43,7 @@ export default function App() {
       />
       <main className="pb-10">{renderSection()}</main>
       <footer className="border-t border-slate-200 dark:border-slate-800 py-4 text-center text-[11px] text-gray-500 dark:text-gray-400">
-        Electricidad & Luz y óptica · {new Date().getFullYear()}
+        Electricidad · {new Date().getFullYear()}
       </footer>
     </div>
   );
