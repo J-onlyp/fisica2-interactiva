@@ -34,22 +34,11 @@ function fetchWithTimeout(resource, options = {}, timeoutMs = 20000) {
 // Añadir esta función (por ejemplo, debajo de fetchWithTimeout)
 async function uploadFilesToServer(filesArray) {
   // filesArray: Array de File (file input)
-  if (!filesArray || filesArray.length === 0) return [];
-  const fd = new FormData();
-  filesArray.forEach((f) => fd.append("files", f));
-  try {
-    const resp = await fetch("/api/upload", {
-      method: "POST",
-      body: fd,
-    });
-    if (!resp.ok) throw new Error("Upload failed");
-    const j = await resp.json();
-    // Espera: { files: [{ name, url, size, type }] }
-    return Array.isArray(j.files) ? j.files : [];
-  } catch (err) {
-    console.error("uploadFilesToServer:", err);
-    return [];
-  }
+  // Actualmente no hay un endpoint de subida implementado en el proxy,
+  // por tanto devolvemos una lista vacía para no bloquear el envío.
+  // Si se implementa `/api/upload` en el backend/serverless, se debe
+  // reimplementar esta función para enviar los archivos y devolver URLs.
+  return [];
 }
 
 export default function ChatGemini({
@@ -65,7 +54,8 @@ export default function ChatGemini({
     { role: "model", text: "Hola, soy Gemini. ¿En qué puedo ayudarte?" },
   ]);
 
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+  const useProxy = import.meta.env.VITE_GEMINI_USE_PROXY === 'true';
+  const apiKey = useProxy ? "__using_proxy__" : import.meta.env.VITE_GEMINI_API_KEY;
   const listRef = useRef(null);
 
   // lista dinámica de modelos; inicializa con DEFAULT_MODEL_CANDIDATES
@@ -77,7 +67,7 @@ export default function ChatGemini({
   const canSend = useMemo(() => (!!input.trim() || attachments.length > 0) && !loading && !!apiKey, [input, loading, apiKey, attachments]);
 
   useEffect(() => {
-    if (!apiKey) return;
+    if (!apiKey || useProxy) return;
     async function listModels() {
       try {
         const url = `https://generativelanguage.googleapis.com/v1/models?key=${apiKey}`;
@@ -101,9 +91,29 @@ export default function ChatGemini({
       }
     }
     listModels();
-  }, [apiKey]);
+  }, [apiKey, useProxy]);
 
   async function callGemini(model, contents) {
+    // Si estamos en modo proxy, delegamos la llamada al endpoint serverless
+    if (useProxy) {
+      try {
+        const resp = await fetch("/api/gemini", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model, contents }),
+        });
+        if (!resp.ok) {
+          const text = await resp.text().catch(() => "Error al comunicarse con el proxy");
+          throw new Error(text || "Error en proxy");
+        }
+        const j = await resp.json();
+        return j.text || j.result || "(Sin respuesta del proxy)";
+      } catch (err) {
+        throw err;
+      }
+    }
+
+    // Modo directo (cliente) — comportamiento previo
     const modelName = model.startsWith("models/") ? model : `models/${model}`;
     const endpoints = ["generateContent", "generateText", "generateMessage"];
     let lastErr = null;
