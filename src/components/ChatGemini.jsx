@@ -56,6 +56,7 @@ export default function ChatGemini({
 
   const useProxy = import.meta.env.VITE_GEMINI_USE_PROXY === 'true';
   const apiKey = useProxy ? "__using_proxy__" : import.meta.env.VITE_GEMINI_API_KEY;
+  const proxyUrlEnv = import.meta.env.VITE_GEMINI_PROXY_URL || null;
   const listRef = useRef(null);
 
   // lista dinámica de modelos; inicializa con DEFAULT_MODEL_CANDIDATES
@@ -97,7 +98,9 @@ export default function ChatGemini({
     // Si estamos en modo proxy, delegamos la llamada al endpoint serverless
     if (useProxy) {
       try {
-        const resp = await fetch("/api/gemini", {
+        const proxyBase = proxyUrlEnv || '/api/gemini';
+        const url = proxyBase.endsWith('/api/gemini') ? proxyBase : `${proxyBase.replace(/\/+$/, '')}/api/gemini`;
+        const resp = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ model, contents }),
