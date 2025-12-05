@@ -273,9 +273,7 @@ export default function ChatGemini({
   return (
     <>
       {/* Botón flotante - solo mostrar si hay API key */}
-    
 
-     
       {/* Panel de chat (solo si hay API key) */}
       {open && apiKey && (
         <div className="fixed bottom-20 right-4 z-50 w-96 max-h-[80vh] rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50/80 dark:bg-slate-800/95 text-slate-900 dark:text-slate-100 shadow-2xl flex flex-col">
