@@ -20,14 +20,15 @@ jobs:
     - name: Install dependencies
       run: npm install
     
-    - name: Build with API Key
+    - name: Create env file
+      run: |
+        echo "VITE_GEMINI_API_KEY=AIzaSyC1tMy5rYB3xnG3cKBiskX0Hf6m6-N52jQ" > .env.local
+    
+    - name: Build
       run: npm run build
-      env:
-        VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY }}
     
     - name: Deploy to gh-pages
       uses: peaceiris/actions-gh-pages@v3
-      if: github.ref == 'refs/heads/main'
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         publish_dir: ./dist
