@@ -515,12 +515,12 @@ function CampoElectricSimulator() {
   const campoNorm = resultado ? (Math.abs(resultado.E) < 1 ? formatFullDecimal(resultado.E) : resultado.E.toLocaleString("en-US", { maximumFractionDigits: 6 })) : "";
 
   return (
-    <div className="rounded-2xl border border-slate-600 bg-slate-800/80 p-4 space-y-4">
-      <h3 className="text-base md:text-lg font-semibold">
+    <div className="rounded-3xl p-6 space-y-5 shadow-lg border border-slate-200 dark:border-slate-600 bg-slate-50/75 dark:bg-slate-800/75">
+      <h3 className="text-base md:text-lg font-semibold text-slate-900 dark:text-white">
         2.2 Campo eléctrico de una carga puntual
       </h3>
 
-      <p className="text-xs md:text-sm text-slate-200">
+      <p className="text-xs md:text-sm text-slate-700 dark:text-slate-200">
         El campo eléctrico generado por una carga puntual se define como:
         <span className="block mt-1 italic">
           E = k · |q| / r²
@@ -542,7 +542,7 @@ function CampoElectricSimulator() {
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
                   placeholder="Ej: 5e-9 o 5 x 10^-9"
-                  className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 text-xs w-full"
+                  className="px-3 py-2 rounded-lg bg-slate-50/70 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-sm w-full focus:outline-none focus:ring-2 focus:ring-yellow-400"
                 />
                 <button
                   type="button"
@@ -562,7 +562,7 @@ function CampoElectricSimulator() {
                   value={r}
                   onChange={(e) => setR(e.target.value)}
                   placeholder="Ej: 0.3 o 30e-2"
-                  className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 text-xs w-full"
+                  className="px-3 py-2 rounded-lg bg-slate-50/70 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-sm w-full focus:outline-none focus:ring-2 focus:ring-yellow-400"
                 />
                 <button
                   type="button"
@@ -585,7 +585,7 @@ function CampoElectricSimulator() {
           {error && <p className="text-xs text-red-400 mt-1">{error}</p>}
 
           {resultado && (
-            <div className="mt-2 text-xs md:text-sm bg-slate-800/70 border border-slate-600 rounded-xl p-2 space-y-2">
+            <div className="mt-2 text-xs md:text-sm bg-slate-50/75 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-600 rounded-2xl p-4 space-y-2">
               <p className="flex items-center gap-1">
                 <span className="font-semibold">Campo eléctrico:</span>
                 {!mostrarEntero ? (
@@ -632,7 +632,7 @@ function CampoElectricSimulator() {
       </div>
 
       <div className="grid md:grid-cols-2 gap-4 items-stretch">
-        <div className="rounded-xl border border-slate-600 bg-slate-800/80 p-3 flex flex-col">
+        <div className="rounded-2xl bg-slate-50/70 dark:bg-slate-800/60 border border-slate-600 dark:border-slate-600 p-4 flex flex-col shadow-inner">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[11px] px-2 py-1 rounded-full bg-slate-800 text-gray-300">
               Visualización 2D
@@ -690,7 +690,7 @@ function CampoElectricSimulator() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-600 bg-slate-800/80 p-3 flex flex-col">
+        <div className="rounded-2xl bg-slate-50/70 dark:bg-slate-800/60 border border-slate-600 dark:border-slate-600 p-4 flex flex-col shadow-inner">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[11px] px-2 py-1 rounded-full bg-slate-800 text-gray-300">
               Simulación 3D
@@ -780,12 +780,12 @@ function OhmSimulator() {
       : "bg-sky-400";
 
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-900/80 p-4 space-y-4">
-      <h3 className="text-base md:text-lg font-semibold">
+    <div className="rounded-3xl p-6 space-y-5 shadow-lg border border-slate-200 dark:border-slate-600 bg-slate-50/75 dark:bg-slate-800/75">
+      <h3 className="text-base md:text-lg font-semibold text-slate-900 dark:text-white">
         2.3 Corriente y Ley de Ohm
       </h3>
 
-      <p className="text-xs md:text-sm text-gray-300">
+      <p className="text-xs md:text-sm text-slate-700 dark:text-slate-200">
         La Ley de Ohm relaciona el voltaje, la corriente y la resistencia:
         <span className="block mt-1 italic">
           V = I · R &nbsp;&nbsp;⇔&nbsp;&nbsp; I = V / R
@@ -804,7 +804,7 @@ function OhmSimulator() {
                 type="number"
                 value={V}
                 onChange={(e) => setV(e.target.value)}
-                className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 text-xs"
+                className="px-3 py-2 rounded-lg bg-slate-50/70 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-sm w-full focus:outline-none focus:ring-2 focus:ring-yellow-400"
               />
             </label>
             <label className="flex flex-col col-span-2">
@@ -813,7 +813,7 @@ function OhmSimulator() {
                 type="number"
                 value={R}
                 onChange={(e) => setR(e.target.value)}
-                className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 text-xs"
+                className="px-3 py-2 rounded-lg bg-slate-50/70 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-sm w-full focus:outline-none focus:ring-2 focus:ring-yellow-400"
               />
             </label>
           </div>
@@ -828,7 +828,7 @@ function OhmSimulator() {
           {error && <p className="text-xs text-red-400 mt-1">{error}</p>}
 
           {resultado && (
-            <div className="mt-2 text-xs md:text-sm bg-slate-800/70 border border-slate-600 rounded-xl p-2 space-y-1">
+            <div className="mt-2 text-xs md:text-sm bg-slate-50/75 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-600 rounded-2xl p-4 space-y-2">
               <p>
                 <span className="font-semibold">Corriente I:</span>{" "}
                 {resultado.I.toFixed(3)} A
@@ -863,7 +863,7 @@ function OhmSimulator() {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-slate-700 bg-slate-900/80 p-3 flex flex-col gap-3">
+      <div className="rounded-2xl bg-slate-50/70 dark:bg-slate-800/60 border border-slate-600 dark:border-slate-600 p-4 flex flex-col gap-3 shadow-inner">
         <div className="flex items-center justify-between">
           <span className="text-[11px] px-2 py-1 rounded-full bg-slate-800 text-gray-300">
             Visualización 2D

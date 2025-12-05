@@ -272,25 +272,27 @@ export default function ChatGemini({
 
   return (
     <>
-      {/* Botón flotante */}
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="fixed bottom-4 right-4 z-50 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-semibold shadow-lg px-4 py-2"
-        title="Abrir chat de IA"
-      >
-        {open ? "Cerrar IA" : "Chat IA"}
-      </button>
+      {/* Botón flotante - solo mostrar si hay API key */}
+      {apiKey && (
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="fixed bottom-4 right-4 z-50 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-semibold shadow-lg px-4 py-2"
+          title="Abrir chat de IA"
+        >
+          {open ? "Cerrar IA" : "Chat IA"}
+        </button>
+      )}
 
-      {/* Panel de chat (más ancho y con revisión de espacio) */}
-      {open && (
-        <div className="fixed bottom-20 right-4 z-50 w-96 max-h-[80vh] rounded-xl border border-slate-700 bg-slate-900/95 text-slate-100 shadow-2xl flex flex-col">
-          <div className="px-3 py-2 border-b border-slate-700 flex items-center justify-between">
+      {/* Panel de chat (solo si hay API key) */}
+      {open && apiKey && (
+        <div className="fixed bottom-20 right-4 z-50 w-96 max-h-[80vh] rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50/80 dark:bg-slate-800/95 text-slate-900 dark:text-slate-100 shadow-2xl flex flex-col">
+          <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-600 flex items-center justify-between bg-slate-100/80 dark:bg-slate-900/80">
             <div className="text-sm font-semibold">{title}</div>
             <div className="flex items-center gap-2">
-              <div className="text-[10px] text-slate-400">{activeModel ? `${activeModel}` : "Gemini"}</div>
+              <div className="text-[10px] text-slate-600 dark:text-slate-400">{activeModel ? `${activeModel}` : "Gemini"}</div>
               <button
                 onClick={clearChat}
-                className="text-[11px] text-amber-300 hover:text-amber-200 px-2 py-1 rounded-md hover:bg-slate-800/50 transition"
+                className="text-[11px] text-amber-600 dark:text-amber-300 hover:text-amber-700 dark:hover:text-amber-200 px-2 py-1 rounded-md hover:bg-slate-200/50 dark:hover:bg-slate-800/50 transition"
                 title="Borrar chat y empezar uno nuevo"
               >
                 🗑️ Limpiar
@@ -304,7 +306,7 @@ export default function ChatGemini({
             </div>
           )}
 
-          <div className="p-2 text-[11px] text-slate-400 border-b border-slate-700">
+          <div className="p-2 text-[11px] text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-600">
             Modelos usados: {modelCandidates.slice(0, 3).join(", ")}
           </div>
 
@@ -312,8 +314,8 @@ export default function ChatGemini({
             {messages.map((m, i) => (
               <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
                 <div className={`max-w-[85%] rounded-lg px-3 py-2 whitespace-pre-wrap leading-relaxed shadow ${m.role === "user"
-                  ? "bg-emerald-500/90 text-slate-900"
-                  : "bg-slate-800/90 text-slate-100 border border-slate-700"
+                  ? "bg-emerald-500/90 text-slate-900 dark:text-white"
+                  : "bg-slate-100/90 dark:bg-slate-800/90 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-700"
                   }`}>
                   {m.text}
                   {/* si el mensaje contiene attachments, mostrar miniaturas/íconos */}
@@ -340,37 +342,37 @@ export default function ChatGemini({
               </div>
             ))}
             {loading && (
-              <div className="text-[11px] text-slate-400">Gemini está escribiendo...</div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400">Gemini está escribiendo...</div>
             )}
             {error && (
-              <div className="text-[11px] text-red-400">{error}</div>
+              <div className="text-[11px] text-red-600 dark:text-red-400 bg-red-50/50 dark:bg-red-900/20 p-2 rounded-md border border-red-200 dark:border-red-800">{error}</div>
             )}
           </div>
 
           {/* Zona de adjuntos previews */}
           {attachments.length > 0 && (
-            <div className="p-2 border-t border-slate-700 bg-slate-900/80">
-              <div className="flex items-center justify-between text-[12px] text-slate-300 mb-1">
+            <div className="p-2 border-t border-slate-200 dark:border-slate-700 bg-slate-100/60 dark:bg-slate-900/80">
+              <div className="flex items-center justify-between text-[12px] text-slate-700 dark:text-slate-300 mb-1">
                 <span>Adjuntos ({attachments.length})</span>
                 <button onClick={() => {
                   attachments.forEach(a => a.url && URL.revokeObjectURL(a.url));
                   setAttachments([]);
-                }} className="text-[11px] text-amber-300 hover:text-amber-200">Eliminar todos</button>
+                }} className="text-[11px] text-amber-600 dark:text-amber-300 hover:text-amber-700 dark:hover:text-amber-200">Eliminar todos</button>
               </div>
               <div className="flex gap-2 overflow-x-auto">
                 {attachments.map(a => (
-                  <div key={a.id} className="flex-shrink-0 bg-slate-800/70 border border-slate-700 rounded-md p-1 w-28">
+                  <div key={a.id} className="flex-shrink-0 bg-slate-200/70 dark:bg-slate-800/70 border border-slate-300 dark:border-slate-700 rounded-md p-1 w-28">
                     <div className="flex items-center justify-center h-16">
                       {a.type?.startsWith("image/") ? (
                         <img src={a.url} alt={a.name} className="h-16 object-contain" />
                       ) : (
-                        <div className="h-12 w-full flex items-center justify-center text-[12px] text-slate-300 bg-slate-700 rounded">{a.name.split('.').pop()}</div>
+                        <div className="h-12 w-full flex items-center justify-center text-[12px] text-slate-700 dark:text-slate-300 bg-slate-300 dark:bg-slate-700 rounded">{a.name.split('.').pop()}</div>
                       )}
                     </div>
-                    <div className="mt-1 text-[11px] text-slate-300 truncate">{a.name}</div>
+                    <div className="mt-1 text-[11px] text-slate-700 dark:text-slate-300 truncate">{a.name}</div>
                     <div className="flex items-center justify-between mt-1">
-                      <div className="text-[10px] text-slate-500">{Math.round(a.size / 1024)} KB</div>
-                      <button onClick={() => removeAttachment(a.id)} className="text-[12px] text-rose-400 hover:text-rose-300 px-1">×</button>
+                      <div className="text-[10px] text-slate-600 dark:text-slate-500">{Math.round(a.size / 1024)} KB</div>
+                      <button onClick={() => removeAttachment(a.id)} className="text-[12px] text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 px-1">×</button>
                     </div>
                   </div>
                 ))}
@@ -378,8 +380,8 @@ export default function ChatGemini({
             </div>
           )}
 
-          <form onSubmit={sendMessage} className="p-3 border-t border-slate-700 flex items-end gap-2">
-            <label className="flex items-center gap-2 text-[12px] px-2 py-1 rounded-md bg-slate-800 border border-slate-600 cursor-pointer hover:bg-slate-700 transition">
+          <form onSubmit={sendMessage} className="p-3 border-t border-slate-200 dark:border-slate-700 flex items-end gap-2 bg-slate-100/50 dark:bg-slate-900/50">
+            <label className="flex items-center gap-2 text-[12px] px-2 py-1 rounded-md bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 cursor-pointer hover:bg-slate-300 dark:hover:bg-slate-700 transition">
               <input
                 type="file"
                 accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -387,8 +389,8 @@ export default function ChatGemini({
                 onChange={(e) => handleFiles(e.target.files)}
                 className="hidden"
               />
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-300" viewBox="0 0 20 20" fill="currentColor"><path d="M4 3a2 2 0 00-2 2v10a3 3 0 003 3h8a3 3 0 003-3V7a2 2 0 00-2-2H9.5a1 1 0 010-2H15a4 4 0 014 4v8a5 5 0 01-5 5H5a5 5 0 01-5-5V5a4 4 0 014-4h11.5a1 1 0 010 2H4z" /></svg>
-              <span className="text-[12px] text-slate-300">Adjuntar</span>
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-700 dark:text-slate-300" viewBox="0 0 20 20" fill="currentColor"><path d="M4 3a2 2 0 00-2 2v10a3 3 0 003 3h8a3 3 0 003-3V7a2 2 0 00-2-2H9.5a1 1 0 010-2H15a4 4 0 014 4v8a5 5 0 01-5 5H5a5 5 0 01-5-5V5a4 4 0 014-4h11.5a1 1 0 010 2H4z" /></svg>
+              <span className="text-[12px] text-slate-700 dark:text-slate-300">Adjuntar</span>
             </label>
 
             <input
@@ -396,7 +398,7 @@ export default function ChatGemini({
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Escribe tu pregunta..."
-              className="flex-1 text-[13px] px-3 py-2 rounded-md bg-slate-800 border border-slate-600 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+              className="flex-1 text-[13px] px-3 py-2 rounded-md bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100 placeholder-slate-600 dark:placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-400"
             />
             <button
               type="submit"
