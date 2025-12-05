@@ -30,7 +30,7 @@ jobs:
     
     - name: Create env file
       run: |
-        echo "VITE_GEMINI_API_KEY=AIzaSyC1tMy5rYB3xnG3cKBiskX0Hf6m6-N52jQ" > .env.local
+        echo "VITE_GEMINI_API_KEY=${{ secrets.VITE_GEMINI_API_KEY }}" > .env.local
     
     - name: Build
       run: npm run build
