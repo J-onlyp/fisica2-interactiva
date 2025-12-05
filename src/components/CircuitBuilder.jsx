@@ -1,322 +1,351 @@
+import React, { useEffect, useRef } from "react";
 
-import CircuitSVG from "./CircuitSVG";
+export default function CircuitSVG({
+  branches,
+  onEditResistor,
+  onDeleteResistor,
+}) {
+  const svgRef = useRef(null);
+  const arrowsGroupRef = useRef(null);
+  const animationId = useRef(null);
+  const timeRef = useRef(0);
 
+  // Dimensiones del SVG
+  const width = 900;
+  const height = 400;
+  const padding = 50;
+  const branchHeight = 80;
+  const totalBranches = branches.length;
+  const availableHeight = height - 2 * padding;
+  const branchSpacing = totalBranches > 1 ? availableHeight / (totalBranches - 1) : 0;
 
-export default function CircuitBuilder({ onBack }) {
-  const [voltage, setVoltage] = useState("100"); // ejemplo por defecto 100 V
-  const [branches, setBranches] = useState([
-    { id: 1, resistances: ["50"] }, // Rama A
-    { id: 2, resistances: ["20"] }, // Rama B
-    { id: 3, resistances: ["10"] }, // Rama C
-  ]);
-  const [error, setError] = useState("");
-  const [results, setResults] = useState(null);
+  // Posiciones de los nodos principales
+  const startX = padding + 100;
+  const endX = width - padding - 100;
 
-  // ====== Gestión de ramas y resistencias ======
-
-  const addBranch = () => {
-    setBranches((prev) => [
-      ...prev,
-      { id: Date.now(), resistances: ["10"] },
-    ]);
+  // Configuración de flechas del campo eléctrico
+  const arrowConfig = {
+    length: 30,
+    headLength: 12,
+    headWidth: 8,
+    spacing: 40,
+    speed: 0.02,
+    intensity: 0.6
   };
 
-  const removeBranch = (id) => {
-    setBranches((prev) => prev.filter((b) => b.id !== id));
+  // Dibujar flecha en posición específica
+  const drawArrow = (ctx, x, y, direction) => {
+    const isLeftToRight = direction === 'right';
+    const dx = isLeftToRight ? arrowConfig.length : -arrowConfig.length;
+
+    // Cuerpo de la flecha
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + dx, y);
+    ctx.strokeStyle = isLeftToRight ? "#22c55e" : "#ef4444";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Cabeza de la flecha
+    ctx.beginPath();
+    const headX = x + dx;
+    ctx.moveTo(headX, y);
+    ctx.lineTo(headX - (isLeftToRight ? arrowConfig.headLength : -arrowConfig.headLength),
+      y - arrowConfig.headWidth / 2);
+    ctx.lineTo(headX - (isLeftToRight ? arrowConfig.headLength : -arrowConfig.headLength),
+      y + arrowConfig.headWidth / 2);
+    ctx.closePath();
+    ctx.fillStyle = isLeftToRight ? "#22c55e" : "#ef4444";
+    ctx.fill();
+
+    // Punto central (opcional)
+    ctx.beginPath();
+    ctx.arc(x, y, 3, 0, Math.PI * 2);
+    ctx.fillStyle = isLeftToRight ? "#16a34a" : "#dc2626";
+    ctx.fill();
   };
 
-  const addResistor = (branchIndex) => {
-    setBranches((prev) =>
-      prev.map((b, i) =>
-        i === branchIndex
-          ? { ...b, resistances: [...b.resistances, "10"] }
-          : b
-      )
-    );
-  };
+  // Dibujar partículas que siguen las flechas
+  const drawParticles = (ctx, x, y, direction, time) => {
+    const isLeftToRight = direction === 'right';
+    const particleCount = 3;
+    const particleSize = 4;
+    const flowOffset = (time * arrowConfig.speed * 100) % arrowConfig.spacing;
 
-  const updateResistorByIndex = (branchIndex, resistorIndex, value) => {
-    setBranches((prev) =>
-      prev.map((b, i) => {
-        if (i !== branchIndex) return b;
-        const newRes = [...b.resistances];
-        newRes[resistorIndex] = value;
-        return { ...b, resistances: newRes };
-      })
-    );
-  };
+    for (let i = 0; i < particleCount; i++) {
+      const particleX = x + (isLeftToRight ?
+        flowOffset + i * arrowConfig.spacing / particleCount :
+        -flowOffset - i * arrowConfig.spacing / particleCount);
 
-  const removeResistorByIndex = (branchIndex, resistorIndex) => {
-    setBranches((prev) =>
-      prev.map((b, i) => {
-        if (i !== branchIndex) return b;
-        const newRes = b.resistances.filter((_, j) => j !== resistorIndex);
-        return {
-          ...b,
-          resistances: newRes.length ? newRes : ["10"],
-        };
-      })
-    );
-  };
+      const particleY = y + (Math.sin(time + i) * 5); // Movimiento sinusoidal
 
-  // ====== Interacción desde el SVG ======
+      ctx.beginPath();
+      ctx.arc(particleX, particleY, particleSize, 0, Math.PI * 2);
 
-  const handleEditResistorFromSVG = (branchIndex, resistorIndex) => {
-    const current = branches[branchIndex].resistances[resistorIndex];
-    const nuevo = window.prompt(
-      "Nuevo valor de la resistencia (Ω):",
-      current
-    );
-    if (nuevo === null) return; // cancelado
-
-    const num = parseFloat(nuevo);
-    if (isNaN(num) || num <= 0) {
-      window.alert("Ingresa un valor numérico mayor que 0 Ω.");
-      return;
-    }
-    updateResistorByIndex(branchIndex, resistorIndex, String(num));
-  };
-
-  const handleDeleteResistorFromSVG = (branchIndex, resistorIndex) => {
-    removeResistorByIndex(branchIndex, resistorIndex);
-  };
-
-  // ====== Cálculo eléctrico ======
-
-  const handleCalculate = () => {
-    setError("");
-    setResults(null);
-
-    const V = parseFloat(voltage);
-    if (isNaN(V) || V <= 0) {
-      setError("El voltaje debe ser un número mayor que 0.");
-      return;
-    }
-
-    if (!branches.length) {
-      setError("Agrega al menos una rama con resistencias.");
-      return;
-    }
-
-    const branchResults = [];
-    for (const b of branches) {
-      if (!b.resistances.length) {
-        setError("Cada rama debe tener al menos una resistencia.");
-        return;
-      }
-      let sum = 0;
-      for (const rStr of b.resistances) {
-        const rNum = parseFloat(rStr);
-        if (isNaN(rNum) || rNum <= 0) {
-          setError("Todas las resistencias deben ser > 0 Ω.");
-          return;
-        }
-        sum += rNum;
-      }
-      branchResults.push(sum); // R_rama
-    }
-
-    let R_eq;
-    if (branchResults.length === 1) {
-      R_eq = branchResults[0]; // serie simple
-    } else {
-      const invSum = branchResults.reduce(
-        (acc, Rb) => acc + 1 / Rb,
-        0
+      // Gradiente para las partículas
+      const gradient = ctx.createRadialGradient(
+        particleX, particleY, 0,
+        particleX, particleY, particleSize
       );
-      R_eq = 1 / invSum;
+      gradient.addColorStop(0, isLeftToRight ? "#86efac" : "#fca5a5");
+      gradient.addColorStop(1, isLeftToRight ? "#22c55e" : "#ef4444");
+
+      ctx.fillStyle = gradient;
+      ctx.fill();
+
+      // Brillo interior
+      ctx.beginPath();
+      ctx.arc(particleX - particleSize / 3, particleY - particleSize / 3,
+        particleSize / 3, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+      ctx.fill();
     }
-
-    const I_total = V / R_eq;
-    const I_branches = branchResults.map((Rb) => V / Rb);
-
-    setResults({
-      V,
-      R_branches: branchResults,
-      R_eq,
-      I_total,
-      I_branches,
-    });
   };
+
+  // Animación de las flechas y partículas
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+
+    // Crear un canvas para las animaciones
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    canvas.style.position = 'absolute';
+    canvas.style.top = '0';
+    canvas.style.left = '0';
+    canvas.style.pointerEvents = 'none';
+
+    const ctx = canvas.getContext('2d');
+    svg.parentNode.style.position = 'relative';
+    svg.parentNode.appendChild(canvas);
+
+    const animate = () => {
+      ctx.clearRect(0, 0, width, height);
+      timeRef.current += arrowConfig.speed;
+
+      // Dibujar flechas en cada rama
+      branches.forEach((branch, branchIndex) => {
+        const y = padding + branchIndex * branchSpacing;
+        const resistorCount = branch.resistances.length;
+
+        // Calcular posiciones para las flechas entre las resistencias
+        const resistorWidth = 60;
+        const totalResistorWidth = resistorCount * resistorWidth;
+        const availableWidth = endX - startX - 100;
+        const resistorSpacing = Math.max(20, (availableWidth - totalResistorWidth) / (resistorCount + 1));
+
+        let currentX = startX + resistorSpacing;
+
+        // Flechas antes de cada resistencia
+        for (let i = 0; i <= resistorCount; i++) {
+          const arrowX = currentX - resistorWidth / 2;
+
+          // Dibujar flecha
+          drawArrow(ctx, arrowX, y, 'right');
+
+          // Dibujar partículas que fluyen
+          drawParticles(ctx, arrowX, y, 'right', timeRef.current);
+
+          if (i < resistorCount) {
+            currentX += resistorWidth + resistorSpacing;
+          }
+        }
+      });
+
+      animationId.current = requestAnimationFrame(animate);
+    };
+
+    animate();
+
+    return () => {
+      if (animationId.current) {
+        cancelAnimationFrame(animationId.current);
+      }
+      if (canvas.parentNode) {
+        canvas.parentNode.removeChild(canvas);
+      }
+    };
+  }, [branches]);
+
+  // Renderizar elementos del circuito
+  const renderResistor = (x, y, width, value, branchIndex, resistorIndex) => (
+    <g key={`resistor-${branchIndex}-${resistorIndex}`}
+      onClick={() => onEditResistor(branchIndex, resistorIndex)}
+      className="cursor-pointer hover:opacity-80 transition-opacity">
+      {/* Símbolo de resistencia (zigzag) */}
+      <path
+        d={`M ${x - width / 2} ${y} 
+           L ${x - width / 4} ${y - 15} 
+           L ${x} ${y + 15} 
+           L ${x + width / 4} ${y - 15} 
+           L ${x + width / 2} ${y}`}
+        fill="none"
+        stroke="#f97316"
+        strokeWidth="3"
+        strokeLinecap="round"
+      />
+
+      {/* Valor de la resistencia */}
+      <text
+        x={x}
+        y={y - 25}
+        fontSize="11"
+        fill="#facc15"
+        textAnchor="middle"
+        className="pointer-events-none select-none"
+      >
+        {value}Ω
+      </text>
+
+      {/* Botón de eliminar */}
+      <g onClick={(e) => {
+        e.stopPropagation();
+        onDeleteResistor(branchIndex, resistorIndex);
+      }}>
+        <circle
+          cx={x + width / 2 + 15}
+          cy={y}
+          r="10"
+          fill="#ef4444"
+          className="cursor-pointer opacity-0 hover:opacity-100 transition-opacity"
+        />
+        <text
+          x={x + width / 2 + 15}
+          y={y + 3}
+          fontSize="10"
+          fill="white"
+          textAnchor="middle"
+          className="pointer-events-none"
+        >
+          ×
+        </text>
+      </g>
+    </g>
+  );
 
   return (
-    <div className="rounded-2xl border border-emerald-600/60 bg-slate-900/90 p-4 space-y-4">
-      {/* Encabezado */}
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <h3 className="text-base md:text-lg font-semibold text-emerald-300">
-            Simulador de circuitos de corriente continua
-          </h3>
-          <p className="text-[11px] md:text-xs text-gray-300 max-w-3xl">
-            Haz clic sobre las resistencias para cambiar su valor. Usa las
-            ramas para representar circuitos en serie, paralelo o mixtos y
-            calcula la resistencia equivalente y las corrientes.
-          </p>
-        </div>
-        <button
-          onClick={onBack}
-          className="text-[11px] md:text-xs px-3 py-1.5 rounded-full border border-slate-600 bg-slate-800 hover:bg-slate-700 text-gray-100"
-        >
-          ← Volver a Corriente y Ley de Ohm
-        </button>
-      </div>
+    <div className="relative">
+      <svg
+        ref={svgRef}
+        width={width}
+        height={height}
+        viewBox={`0 0 ${width} ${height}`}
+        className="w-full h-auto"
+      >
+        {/* Fondo */}
+        <rect width={width} height={height} fill="#0f172a" />
 
-      {/* SVG interactivo */}
-      <div className="rounded-xl border border-slate-700 bg-slate-950/70 p-3">
-        <p className="text-[11px] md:text-xs text-gray-300 mb-2">
-          Dibujo del circuito. Haz clic en una resistencia (zigzag) para editar
-          su valor. Pulsa la “×” para eliminarla.
-        </p>
-        <CircuitSVG
-          branches={branches}
-          onEditResistor={handleEditResistorFromSVG}
-          onDeleteResistor={handleDeleteResistorFromSVG}
+        {/* Líneas conductoras principales */}
+        <path
+          d={`M ${startX} ${padding} 
+             V ${padding + (totalBranches - 1) * branchSpacing} 
+             M ${endX} ${padding} 
+             V ${padding + (totalBranches - 1) * branchSpacing}`}
+          fill="none"
+          stroke="#22c1dc"
+          strokeWidth="4"
+          strokeLinecap="round"
         />
-      </div>
 
-      {/* Paneles: configuración y resultados */}
-      <div className="grid md:grid-cols-2 gap-4 items-start">
-        {/* Panel izquierdo: configuración */}
-        <div className="space-y-3 text-[11px] md:text-xs">
-          <div className="rounded-xl border border-slate-700 bg-slate-900 p-3 space-y-2">
-            <label className="flex flex-col gap-1">
-              <span className="font-semibold">Voltaje de la fuente (V)</span>
-              <input
-                type="number"
-                value={voltage}
-                onChange={(e) => setVoltage(e.target.value)}
-                className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 text-xs"
+        {/* Símbolo de fuente de voltaje */}
+        <g transform={`translate(${startX - 80}, ${padding + (totalBranches - 1) * branchSpacing / 2})`}>
+          <circle cx="0" cy="0" r="20" fill="#1e293b" stroke="#4ade80" strokeWidth="2" />
+          <text x="0" y="5" fontSize="12" fill="#4ade80" textAnchor="middle">V</text>
+          <path d="M -15 -10 L -15 10 M -15 0 L 15 0 M 15 -5 L 15 5"
+            stroke="#4ade80" strokeWidth="2" fill="none" />
+        </g>
+
+        {/* Rama y resistencias */}
+        {branches.map((branch, branchIndex) => {
+          const y = padding + branchIndex * branchSpacing;
+          const resistorCount = branch.resistances.length;
+          const resistorWidth = 60;
+          const totalResistorWidth = resistorCount * resistorWidth;
+          const availableWidth = endX - startX - 100;
+          const resistorSpacing = Math.max(20, (availableWidth - totalResistorWidth) / (resistorCount + 1));
+
+          return (
+            <g key={`branch-${branchIndex}`}>
+              {/* Línea conductora de la rama */}
+              <line
+                x1={startX}
+                y1={y}
+                x2={endX}
+                y2={y}
+                stroke="#22c1dc"
+                strokeWidth="3"
+                strokeLinecap="round"
               />
-            </label>
-            <button
-              onClick={addBranch}
-              className="mt-1 inline-flex items-center gap-1 text-[11px] px-3 py-1.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold"
-            >
-              + Agregar rama en paralelo
-            </button>
-          </div>
 
-          {/* Lista sencilla de ramas */}
-          <div className="space-y-3">
-            {branches.map((branch, idx) => (
-              <div
-                key={branch.id}
-                className="rounded-xl border border-slate-700 bg-slate-900 p-3 space-y-2"
+              {/* Conexiones verticales a las líneas principales */}
+              <line
+                x1={startX}
+                y1={y}
+                x2={startX}
+                y2={branchIndex === 0 ? padding : branchIndex === totalBranches - 1 ? padding + (totalBranches - 1) * branchSpacing : y}
+                stroke="#22c1dc"
+                strokeWidth="3"
+                strokeLinecap="round"
+              />
+
+              {/* Resistencias */}
+              {branch.resistances.map((resValue, resIndex) => {
+                const x = startX + resistorSpacing + resIndex * (resistorWidth + resistorSpacing) + resistorWidth / 2;
+                return renderResistor(x, y, resistorWidth, resValue, branchIndex, resIndex);
+              })}
+            </g>
+          );
+        })}
+
+        {/* Etiquetas de corriente */}
+        {branches.map((branch, branchIndex) => {
+          const y = padding + branchIndex * branchSpacing;
+          return (
+            <g key={`current-label-${branchIndex}`}>
+              <text
+                x={startX - 40}
+                y={y - 15}
+                fontSize="11"
+                fill="#60a5fa"
+                textAnchor="end"
+                className="pointer-events-none select-none"
               >
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-gray-100">
-                    Rama {idx + 1}
-                  </span>
-                  <button
-                    onClick={() => removeBranch(branch.id)}
-                    className="text-[10px] px-2 py-1 rounded-full border border-red-500/60 text-red-300 hover:bg-red-500/10"
-                  >
-                    Eliminar rama
-                  </button>
-                </div>
+                I{branchIndex + 1}
+              </text>
+              <text
+                x={endX + 40}
+                y={y - 15}
+                fontSize="11"
+                fill="#60a5fa"
+                textAnchor="start"
+                className="pointer-events-none select-none"
+              >
+                I{branchIndex + 1}
+              </text>
+            </g>
+          );
+        })}
 
-                <p className="text-[11px] text-gray-300">
-                  Resistencias en serie:{" "}
-                  {branch.resistances
-                    .map((r, i) => `R${idx + 1}.${i + 1}=${r}Ω`)
-                    .join(" , ")}
-                </p>
+        {/* Leyenda de flechas */}
+        <g transform="translate(50, 20)">
+          <text x="0" y="0" fontSize="10" fill="#94a3b8" textAnchor="start">
+            Flechas verdes: Campo eléctrico (flujo de electrones)
+          </text>
+          <g transform="translate(0, 15)">
+            <path d="M 0 0 L 20 0" stroke="#22c55e" strokeWidth="2" />
+            <path d="M 20 0 L 16 -4 L 20 0 L 16 4" fill="#22c55e" />
+            <text x="25" y="3" fontSize="10" fill="#94a3b8">→ Flujo convencional</text>
+          </g>
+        </g>
+      </svg>
 
-                <button
-                  onClick={() => addResistor(idx)}
-                  className="text-[11px] mt-1 px-3 py-1.5 rounded-full bg-slate-800 hover:bg-slate-700 border border-slate-600 text-gray-100"
-                >
-                  + Agregar resistencia en esta rama
-                </button>
-              </div>
-            ))}
-          </div>
-
-          {error && (
-            <p className="text-[11px] text-red-400 bg-red-500/10 border border-red-500/40 rounded-lg px-3 py-1.5">
-              {error}
-            </p>
-          )}
-
-          <button
-            onClick={handleCalculate}
-            className="mt-1 w-full px-4 py-1.5 rounded-full bg-primary hover:bg-primary-dark text-xs font-semibold"
-          >
-            Calcular resistencia equivalente e intensidades
-          </button>
-        </div>
-
-        {/* Panel derecho: resultados */}
-        <div className="rounded-xl border border-slate-700 bg-slate-900 p-3 space-y-3 text-[11px] md:text-xs">
-          <h4 className="font-semibold text-gray-100 mb-1">
-            Resultados del circuito
-          </h4>
-
-          {results ? (
-            <>
-              <p className="text-gray-300">
-                <span className="font-semibold">Voltaje de la fuente:</span>{" "}
-                {results.V.toFixed(2)} V
-              </p>
-              <p className="text-gray-300">
-                <span className="font-semibold">
-                  Resistencia equivalente R<sub>eq</sub>:
-                </span>{" "}
-                {results.R_eq.toFixed(2)} Ω
-              </p>
-              <p className="text-gray-300">
-                <span className="font-semibold">
-                  Corriente total I<sub>total</sub>:
-                </span>{" "}
-                {results.I_total.toFixed(3)} A
-              </p>
-
-              <div className="mt-2">
-                <h5 className="font-semibold text-gray-200 mb-1">
-                  Detalle por rama
-                </h5>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-left text-[11px]">
-                    <thead>
-                      <tr className="text-gray-400">
-                        <th className="py-1 pr-3">Rama</th>
-                        <th className="py-1 pr-3">R<sub>rama</sub> (Ω)</th>
-                        <th className="py-1 pr-3">I<sub>rama</sub> (A)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {results.R_branches.map((Rb, i) => (
-                        <tr key={i} className="border-t border-slate-800">
-                          <td className="py-1 pr-3 text-gray-200">
-                            Rama {i + 1}
-                          </td>
-                          <td className="py-1 pr-3 text-gray-300">
-                            {Rb.toFixed(2)}
-                          </td>
-                          <td className="py-1 pr-3 text-gray-300">
-                            {results.I_branches[i].toFixed(3)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <p className="text-[11px] text-gray-400 mt-2">
-                Si solo existe una rama, el circuito es puramente en serie. Con
-                varias ramas, las resistencias se combinan en serie dentro de
-                cada rama y en paralelo entre ramas.
-              </p>
-            </>
-          ) : (
-            <p className="text-gray-400">
-              Completa los datos y pulsa{" "}
-              <span className="font-semibold">“Calcular…”</span> para ver los
-              resultados del circuito.
-            </p>
-          )}
-        </div>
+      {/* Nota informativa */}
+      <div className="absolute bottom-4 left-4 bg-slate-800/80 backdrop-blur-sm p-2 rounded-lg border border-slate-700">
+        <p className="text-[10px] text-gray-300">
+          💡 <strong>Campo eléctrico visualizado:</strong> Las flechas muestran la dirección del campo eléctrico
+          (flujo convencional de positivo a negativo). Las partículas animadas representan electrones.
+        </p>
       </div>
     </div>
   );

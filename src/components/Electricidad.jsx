@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 
 import Coulomb3DScene from "./Coulomb3DScene";
 import Field3DScene from "./Field3DScene";
@@ -6,24 +6,127 @@ import CircuitDrawSimulator from "./CircuitDrawSimulator";
 
 const K = 8.99e9; // N·m²/C²
 
-//coulomb
+function parseValorCientifico(input) {
+  if (!input) return NaN;
+
+  let s = input.trim().toLowerCase();
+
+  // Cambiar coma por punto (para formato español)
+  s = s.replace(",", ".");
+
+  // Unificar símbolo de multiplicación
+  s = s.replace(/×/g, "x");
+
+  // Caso tipo "a x 10^-b" o "a*10^-b"
+  const match = s.match(
+    /^([+-]?\d+(\.\d+)?)(\s*[x*]\s*10\s*\^?\s*([+-]?\d+))$/
+  );
+  if (match) {
+    const coef = parseFloat(match[1]);
+    const exp = parseInt(match[4], 10);
+    if (isNaN(coef) || isNaN(exp)) return NaN;
+    return coef * Math.pow(10, exp);
+  }
+
+  // Caso normal: número entendido por JS (incluye 2.5e-8)
+  const num = Number(s);
+  if (!isNaN(num)) return num;
+
+  return NaN;
+}
+
+// Formatea a "entero" conservando decimales cuando el exponente es negativo
+function formatFullDecimal(val) {
+  if (!isFinite(val) || val === 0) return "0";
+  const abs = Math.abs(val);
+  // Para magnitudes >= 1 usamos locale con hasta 6 decimales
+  if (abs >= 1) return val.toLocaleString("en-US", { maximumFractionDigits: 6 });
+
+  // Para magnitudes < 1 expandimos completamente a partir de notación científica
+  // Usamos 12 cifras significativas para evitar ruido excesivo de coma flotante
+  const expStr = val.toExponential(12);
+  const [coefStr, eStr] = expStr.split("e");
+  const exp = parseInt(eStr, 10);
+  // coefStr está normalizado con 1 dígito entero: d.dddd
+  const sign = val < 0 ? "-" : "";
+  const digits = coefStr.replace(".", "").replace(/^-/, ""); // solo dígitos
+  const intLen = 1; // por normalización
+  const shift = exp; // mover punto desde después del primer dígito
+  let idx = intLen + shift;
+
+  if (idx <= 0) {
+    // 0.00.. + dígitos
+    const zeros = "0".repeat(-idx);
+    return `${sign}0.${zeros}${digits}`.replace(/\.?0+$/, (m) => m); // no recortar ceros
+  }
+  if (idx >= digits.length) {
+    // dígitos + ceros
+    const zeros = "0".repeat(idx - digits.length);
+    return sign + digits + zeros;
+  }
+  // insertar punto dentro de digits
+  const intPart = digits.slice(0, idx);
+  const fracPart = digits.slice(idx);
+  // No eliminar ceros de la fracción: mostrar todos los que aporta la precisión
+  return `${sign}${intPart}.${fracPart}`;
+}
+
+// =======================
+// 2.1 Ley de Coulomb
+// =======================
 
 function CoulombSimulator() {
-  const [q1, setQ1] = useState("0.000001"); // μC
-  const [q2, setQ2] = useState("0.000001"); // μC
-  const [r, setR] = useState("0.1");        // m
+  const [q1, setQ1] = useState(""); // C
+  const [q2, setQ2] = useState(""); // C
+  const [r, setR] = useState("");   // m
   const [resultado, setResultado] = useState(null);
   const [error, setError] = useState("");
+  const [mostrarEntero, setMostrarEntero] = useState(false);
+
+  // Estado derivado en vivo para sincronizar vistas 2D/3D
+  const q1NumLive = parseValorCientifico(q1);
+  const q2NumLive = parseValorCientifico(q2);
+  const rNumLive = parseValorCientifico(r);
+  const hasInputs = ![q1NumLive, q2NumLive, rNumLive].some((v) => isNaN(v)) && rNumLive > 0;
+  const signLive = hasInputs ? Math.sign(q1NumLive * q2NumLive) : 0; // +1 repulsión, -1 atracción, 0 indef.
+  const FLive = hasInputs ? (K * Math.abs(q1NumLive * q2NumLive)) / (rNumLive * rNumLive) : 0;
+  const intensityLive = hasInputs && FLive > 0 ? Math.min(1, Math.log10(1 + FLive) / 6) : 0.3;
+
+  // Refs para insertar notación científica y enfocar
+  const q1Ref = useRef(null);
+  const q2Ref = useRef(null);
+  const rRef = useRef(null);
+
+  const insertSci = (val, setter, ref) => {
+    const has = /10\s*\^/i.test(val || "");
+    const base = val || "";
+    const newVal = has ? base : (base.trim() ? base + " × 10^" : "1 × 10^");
+    setter(newVal);
+    // Coloca el cursor al final para que el usuario escriba el exponente
+    requestAnimationFrame(() => {
+      if (ref && ref.current) {
+        try {
+          const pos = newVal.length;
+          ref.current.focus();
+          ref.current.setSelectionRange(pos, pos);
+        } catch (e) {
+          ref.current.focus();
+        }
+      }
+    });
+  };
 
   const calcular = () => {
     setError("");
 
-    const q1Num = parseFloat(q1);
-    const q2Num = parseFloat(q2);
-    const rNum = parseFloat(r);
+    const q1Num = parseValorCientifico(q1);
+    const q2Num = parseValorCientifico(q2);
+    const rNum = parseValorCientifico(r);
 
     if ([q1Num, q2Num, rNum].some((v) => isNaN(v))) {
-      setError("Ingresa valores numéricos válidos.");
+      setError(
+        "Ingresa valores válidos. Ejemplos: 4e-6, 4 x 10^-6, 0.000004"
+      );
       setResultado(null);
       return;
     }
@@ -33,23 +136,21 @@ function CoulombSimulator() {
       return;
     }
 
-    const q1C = q1Num * 1e-6;
-    const q2C = q2Num * 1e-6;
+    const q1C = q1Num;
+    const q2C = q2Num;
 
     const F = (K * Math.abs(q1C * q2C)) / (rNum * rNum);
     const tipo =
-      q1Num * q2Num > 0
+      q1C * q2C > 0
         ? "Repulsión (cargas del mismo signo)"
         : "Atracción (cargas de signo opuesto)";
 
     setResultado({
       F,
       tipo,
-      q1Input: q1Num,
-      q2Input: q2Num,
-      r: rNum,
       q1C,
       q2C,
+      r: rNum,
     });
   };
 
@@ -58,13 +159,21 @@ function CoulombSimulator() {
       ? Math.min(1, Math.log10(1 + resultado.F) / 6)
       : 0.3;
 
+  // Notación científica bonita
+  const partes = resultado ? resultado.F.toExponential(3).split("e") : null;
+  const coef = partes ? partes[0] : "";
+  const exp = partes ? parseInt(partes[1], 10) : 0;
+
+  // Valor entero/decimal grande
+  const entero = resultado ? formatFullDecimal(resultado.F) : "";
+
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-900/80 p-4 space-y-4">
-      <h3 className="text-base md:text-lg font-semibold">
+    <div className="rounded-3xl p-6 space-y-5 shadow-lg border border-slate-200 dark:border-slate-600 bg-slate-50/75 dark:bg-slate-800/75">
+      <h3 className="text-base md:text-lg font-semibold text-slate-900 dark:text-white">
         2.1 Ley de Coulomb – Fuerza eléctrica
       </h3>
 
-      <p className="text-xs md:text-sm text-gray-300">
+      <p className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed">
         Calcula la fuerza eléctrica entre dos cargas puntuales:
         <span className="block mt-1 italic">
           F = k · |q₁ q₂| / r²
@@ -72,59 +181,109 @@ function CoulombSimulator() {
       </p>
 
       {/* entrada y resultado */}
-      <div className="grid md:grid-cols-2 gap-4 items-start">
-        <div className="space-y-2 text-xs md:text-sm">
+      <div className="grid md:grid-cols-2 gap-6 items-start">
+        <div className="space-y-3 text-sm">
           <div className="grid grid-cols-2 gap-2">
             <label className="flex flex-col">
-              <span>q₁ (μC)</span>
-              <input
-                type="number"
-                value={q1}
-                onChange={(e) => setQ1(e.target.value)}
-                className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 text-xs"
-              />
+              <span>q₁ (C)</span>
+              <div className="flex items-center gap-1">
+                <input
+                  ref={q1Ref}
+                  type="text"
+                  value={q1}
+                  onChange={(e) => setQ1(e.target.value)}
+                  placeholder="Ej: 4e-6"
+                  className="px-3 py-2 rounded-lg bg-slate-50/70 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-sm w-full focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => insertSci(q1, setQ1, q1Ref)}
+                  className="px-3 py-1.5 rounded-md border border-slate-200 dark:border-slate-600 bg-white/90 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs text-slate-800 dark:text-gray-200 whitespace-nowrap"
+                  title="Insertar ×10^"
+                >
+                  ×10^
+                </button>
+              </div>
             </label>
             <label className="flex flex-col">
-              <span>q₂ (μC)</span>
-              <input
-                type="number"
-                value={q2}
-                onChange={(e) => setQ2(e.target.value)}
-                className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 text-xs"
-              />
+              <span>q₂ (C)</span>
+              <div className="flex items-center gap-1">
+                <input
+                  ref={q2Ref}
+                  type="text"
+                  value={q2}
+                  onChange={(e) => setQ2(e.target.value)}
+                  placeholder="Ej: -8e-6"
+                  className="px-3 py-2 rounded-lg bg-slate-50/70 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-sm w-full focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => insertSci(q2, setQ2, q2Ref)}
+                  className="px-3 py-1.5 rounded-md border border-slate-200 dark:border-slate-600 bg-white/90 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs text-slate-800 dark:text-gray-200 whitespace-nowrap"
+                  title="Insertar ×10^"
+                >
+                  ×10^
+                </button>
+              </div>
             </label>
             <label className="flex flex-col col-span-2">
               <span>r (m)</span>
-              <input
-                type="number"
-                value={r}
-                onChange={(e) => setR(e.target.value)}
-                className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 text-xs"
-              />
+              <div className="flex items-center gap-1">
+                <input
+                  ref={rRef}
+                  type="text"
+                  value={r}
+                  onChange={(e) => setR(e.target.value)}
+                  placeholder="Ej: 4e-3"
+                  className="px-3 py-2 rounded-lg bg-slate-50/70 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-sm w-full focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => insertSci(r, setR, rRef)}
+                  className="px-2 py-1 rounded-md border border-slate-600 bg-slate-800 hover:bg-slate-700 text-[10px] text-gray-200 whitespace-nowrap"
+                  title="Insertar ×10^"
+                >
+                  ×10^
+                </button>
+              </div>
             </label>
           </div>
 
           <button
             onClick={calcular}
-            className="mt-2 w-full md:w-auto px-4 py-1.5 rounded-full bg-primary hover:bg-primary-dark text-xs font-semibold"
+            className="mt-3 w-full md:w-auto px-5 py-2 rounded-lg bg-primary hover:bg-primary-dark text-sm font-semibold shadow-sm"
           >
             Calcular F
           </button>
 
           {error && <p className="text-xs text-red-400 mt-1">{error}</p>}
 
-          {resultado && (
-            <div className="mt-2 text-xs md:text-sm bg-slate-800/70 border border-slate-600 rounded-xl p-2 space-y-1">
-              <p>
-                <span className="font-semibold">Fuerza:</span>{" "}
-                {resultado.F.toExponential(3)} N
+            {resultado && (
+            <div className="mt-4 text-sm bg-slate-50/75 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-600 rounded-2xl p-4 shadow-inner space-y-3">
+              <p className="flex items-center gap-1">
+                <span className="font-semibold">F ≈</span>
+                {!mostrarEntero ? (
+                  <>
+                    {coef} × 10<sup>{exp}</sup> N
+                  </>
+                ) : (
+                  <>{entero} N</>
+                )}
               </p>
+
+              <button
+                onClick={() => setMostrarEntero(!mostrarEntero)}
+                className="px-3 py-1 rounded-md bg-sky-600 hover:bg-sky-500 text-white text-sm"
+              >
+                Cambiar a {mostrarEntero ? "notación científica" : "entero"}
+              </button>
+
               <p>
                 <span className="font-semibold">Tipo:</span> {resultado.tipo}
               </p>
               <p className="text-[11px] text-gray-400">
-                q₁ = {resultado.q1Input} μC · q₂ = {resultado.q2Input} μC · r ={" "}
-                {resultado.r} m
+                q₁ = {resultado.q1C.toExponential(3)} C · q₂ ={" "}
+                {resultado.q2C.toExponential(3)} C · r = {resultado.r} m
               </p>
             </div>
           )}
@@ -147,37 +306,99 @@ function CoulombSimulator() {
       </div>
 
       {/* visualización 2D y 3D */}
-      <div className="grid md:grid-cols-2 gap-4 items-stretch">
-        <div className="rounded-xl border border-slate-700 bg-slate-900/80 p-3 flex flex-col">
+      <div className="grid md:grid-cols-2 gap-6 items-stretch">
+        <div className="rounded-2xl bg-slate-50/70 dark:bg-slate-800/60 border border-slate-600 dark:border-slate-600 p-4 flex flex-col shadow-inner">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[11px] px-2 py-1 rounded-full bg-slate-800 text-gray-300">
               Visualización 2D
             </span>
             {resultado && (
               <span className="text-[11px] text-amber-300 font-semibold">
-                {resultado.tipo.startsWith("Repulsión")
-                  ? "Repulsión"
-                  : "Atracción"}
+                {resultado.q1C * resultado.q2C > 0 ? "Repulsión" : "Atracción"}
               </span>
             )}
           </div>
 
           <div className="flex-1 relative flex items-center justify-center">
+            {/* Flechas 2D según atracción/repulsión */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              {(() => {
+                const alpha = 0.4 + (intensityLive || 0) * 0.6;
+                const len = 80 + (intensityLive || 0) * 60; // largo base
+                const color = signLive < 0 ? "#4ade80" : "#fbbf24"; // atracción/repulsión
+                const common = {
+                  height: 2,
+                  opacity: alpha,
+                  background: `linear-gradient(90deg, ${color}, ${color})`,
+                };
+                if (signLive === 0) return null;
+                return (
+                  <>
+                    {/* flecha izquierda */}
+                    <div
+                      style={{
+                        position: "absolute",
+                        width: len,
+                        left: `calc(50% - ${len / 2 + 8}px)`,
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        ...common,
+                      }}
+                    />
+                    <div
+                      style={{
+                        position: "absolute",
+                        left: `calc(50% - ${len / 2 + 12}px)`,
+                        top: "50%",
+                        transform: signLive > 0 ? "translateY(-50%) rotate(180deg)" : "translateY(-50%)",
+                        borderTop: "6px solid transparent",
+                        borderBottom: "6px solid transparent",
+                        borderLeft: `10px solid ${color}`,
+                        opacity: alpha,
+                      }}
+                    />
+                    {/* flecha derecha */}
+                    <div
+                      style={{
+                        position: "absolute",
+                        width: len,
+                        right: `calc(50% - ${len / 2 + 8}px)`,
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        ...common,
+                      }}
+                    />
+                    <div
+                      style={{
+                        position: "absolute",
+                        right: `calc(50% - ${len / 2 + 12}px)`,
+                        top: "50%",
+                        transform: signLive > 0 ? "translateY(-50%)" : "translateY(-50%) rotate(180deg)",
+                        borderTop: "6px solid transparent",
+                        borderBottom: "6px solid transparent",
+                        borderLeft: `10px solid ${color}`,
+                        opacity: alpha,
+                      }}
+                    />
+                  </>
+                );
+              })()}
+            </div>
             <div className="absolute left-6 flex flex-col items-center gap-1">
-              <div className="h-10 w-10 rounded-full bg-red-500 flex items-center justify-center text-xs font-bold">
-                {resultado && resultado.q1Input >= 0 ? "+" : "−"}
+              <div className={`h-10 w-10 rounded-full ${q1NumLive < 0 ? "bg-blue-500" : "bg-red-500"} flex items-center justify-center text-xs font-bold`}>
+                {isNaN(q1NumLive) ? "?" : (q1NumLive < 0 ? "−" : "+")}
               </div>
               <div className="text-[10px] text-gray-300">
-                q₁ = {q1} μC
+                q₁ = {q1 || "—"} C
               </div>
             </div>
 
             <div className="absolute right-6 flex flex-col items-center gap-1">
-              <div className="h-10 w-10 rounded-full bg-blue-500 flex items-center justify-center text-xs font-bold">
-                {resultado && resultado.q2Input >= 0 ? "+" : "−"}
+              <div className={`h-10 w-10 rounded-full ${q2NumLive < 0 ? "bg-blue-500" : "bg-red-500"} flex items-center justify-center text-xs font-bold`}>
+                {isNaN(q2NumLive) ? "?" : (q2NumLive < 0 ? "−" : "+")}
               </div>
               <div className="text-[10px] text-gray-300">
-                q₂ = {q2} μC
+                q₂ = {q2 || "—"} C
               </div>
             </div>
 
@@ -188,7 +409,7 @@ function CoulombSimulator() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-700 bg-slate-900/80 p-3 flex flex-col">
+        <div className="rounded-2xl bg-slate-50/70 dark:bg-slate-800/60 border border-slate-600 dark:border-slate-600 p-4 flex flex-col shadow-inner">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[11px] px-2 py-1 rounded-full bg-slate-800 text-gray-300">
               Simulación 3D
@@ -200,7 +421,13 @@ function CoulombSimulator() {
             )}
           </div>
           <div className="flex-1">
-            <Coulomb3DScene minHeight={260} intensity={intensidad} />
+            <Coulomb3DScene
+              minHeight={260}
+              intensity={intensityLive}
+              mode={signLive < 0 ? "attract" : signLive > 0 ? "repel" : "none"}
+              q1Sign={isNaN(q1NumLive) ? 1 : (q1NumLive >= 0 ? 1 : -1)}
+              q2Sign={isNaN(q2NumLive) ? 1 : (q2NumLive >= 0 ? 1 : -1)}
+            />
           </div>
         </div>
       </div>
@@ -208,22 +435,48 @@ function CoulombSimulator() {
   );
 }
 
-//campo electrico
+// =======================
+// 2.2 Campo eléctrico
+// =======================
 
 function CampoElectricSimulator() {
-  const [q, setQ] = useState("0.000001"); // μC
-  const [r, setR] = useState("0.1");      // m
+  const [q, setQ] = useState(""); // C
+  const [r, setR] = useState(""); // m
   const [resultado, setResultado] = useState(null);
   const [error, setError] = useState("");
+  const [mostrarEntero, setMostrarEntero] = useState(false);
+
+  const qRef = React.useRef(null);
+  const rRef = React.useRef(null);
+
+  const insertSci = (val, setter, ref) => {
+    const has = /10\s*\^/i.test(val || "");
+    const base = val || "";
+    const newVal = has ? base : (base.trim() ? base + " × 10^" : "1 × 10^");
+    setter(newVal);
+    requestAnimationFrame(() => {
+      if (ref && ref.current) {
+        try {
+          const pos = newVal.length;
+          ref.current.focus();
+          ref.current.setSelectionRange(pos, pos);
+        } catch (e) {
+          ref.current.focus();
+        }
+      }
+    });
+  };
 
   const calcular = () => {
     setError("");
 
-    const qNum = parseFloat(q);
-    const rNum = parseFloat(r);
+    const qNum = parseValorCientifico(q);
+    const rNum = parseValorCientifico(r);
 
     if ([qNum, rNum].some((v) => isNaN(v))) {
-      setError("Ingresa valores numéricos válidos.");
+      setError(
+        "Ingresa valores válidos. Ejemplos: 5e-9, 0.000000005, 5 x 10^-9"
+      );
       setResultado(null);
       return;
     }
@@ -233,17 +486,18 @@ function CampoElectricSimulator() {
       return;
     }
 
-    const qC = qNum * 1e-6;
+    const qC = qNum; // en C
     const E = (K * Math.abs(qC)) / (rNum * rNum); // N/C
 
     const direccion =
-      qNum > 0
+      qC > 0
         ? "Sale radialmente hacia afuera (carga positiva)"
-        : "Entra radialmente hacia la carga (carga negativa)";
+        : qC < 0
+        ? "Entra radialmente hacia la carga (carga negativa)"
+        : "No hay campo eléctrico (q = 0)";
 
     setResultado({
       E,
-      qInput: qNum,
       qC,
       r: rNum,
       direccion,
@@ -255,19 +509,24 @@ function CampoElectricSimulator() {
       ? Math.min(1, Math.log10(1 + resultado.E) / 10)
       : 0.3;
 
+  const campoPartes = resultado ? resultado.E.toExponential(3).split("e") : null;
+  const campoCoef = campoPartes ? campoPartes[0] : "";
+  const campoPow = campoPartes ? parseInt(campoPartes[1], 10) : 0;
+  const campoNorm = resultado ? (Math.abs(resultado.E) < 1 ? formatFullDecimal(resultado.E) : resultado.E.toLocaleString("en-US", { maximumFractionDigits: 6 })) : "";
+
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-900/80 p-4 space-y-4">
+    <div className="rounded-2xl border border-slate-600 bg-slate-800/80 p-4 space-y-4">
       <h3 className="text-base md:text-lg font-semibold">
         2.2 Campo eléctrico de una carga puntual
       </h3>
 
-      <p className="text-xs md:text-sm text-gray-300">
+      <p className="text-xs md:text-sm text-slate-200">
         El campo eléctrico generado por una carga puntual se define como:
         <span className="block mt-1 italic">
           E = k · |q| / r²
         </span>
         donde <span className="font-semibold">E</span> se mide en N/C,
-        <span className="font-semibold"> q</span> es la carga y
+        <span className="font-semibold"> q</span> es la carga (en C) y
         <span className="font-semibold"> r</span> la distancia al punto de estudio.
       </p>
 
@@ -275,22 +534,44 @@ function CampoElectricSimulator() {
         <div className="space-y-2 text-xs md:text-sm">
           <div className="grid grid-cols-2 gap-2">
             <label className="flex flex-col col-span-2">
-              <span>q (μC)</span>
-              <input
-                type="number"
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 text-xs"
-              />
+              <span>q (C)</span>
+              <div className="flex items-center gap-1">
+                <input
+                  ref={qRef}
+                  type="text"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Ej: 5e-9 o 5 x 10^-9"
+                  className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 text-xs w-full"
+                />
+                <button
+                  type="button"
+                  onClick={() => insertSci(q, setQ, qRef)}
+                  className="px-2 py-1 rounded-md border border-slate-600 bg-slate-800 hover:bg-slate-700 text-[10px] text-gray-200 whitespace-nowrap"
+                >
+                  ×10^
+                </button>
+              </div>
             </label>
             <label className="flex flex-col col-span-2">
               <span>r (m)</span>
-              <input
-                type="number"
-                value={r}
-                onChange={(e) => setR(e.target.value)}
-                className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 text-xs"
-              />
+              <div className="flex items-center gap-1">
+                <input
+                  ref={rRef}
+                  type="text"
+                  value={r}
+                  onChange={(e) => setR(e.target.value)}
+                  placeholder="Ej: 0.3 o 30e-2"
+                  className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 text-xs w-full"
+                />
+                <button
+                  type="button"
+                  onClick={() => insertSci(r, setR, rRef)}
+                  className="px-2 py-1 rounded-md border border-slate-600 bg-slate-800 hover:bg-slate-700 text-[10px] text-gray-200 whitespace-nowrap"
+                >
+                  ×10^
+                </button>
+              </div>
             </label>
           </div>
 
@@ -304,17 +585,31 @@ function CampoElectricSimulator() {
           {error && <p className="text-xs text-red-400 mt-1">{error}</p>}
 
           {resultado && (
-            <div className="mt-2 text-xs md:text-sm bg-slate-800/70 border border-slate-600 rounded-xl p-2 space-y-1">
-              <p>
-                <span className="font-semibold">Campo eléctrico:</span>{" "}
-                {resultado.E.toExponential(3)} N/C
+            <div className="mt-2 text-xs md:text-sm bg-slate-800/70 border border-slate-600 rounded-xl p-2 space-y-2">
+              <p className="flex items-center gap-1">
+                <span className="font-semibold">Campo eléctrico:</span>
+                {!mostrarEntero ? (
+                  <>
+                    {campoCoef} × 10<sup>{campoPow}</sup> N/C
+                  </>
+                ) : (
+                  <>
+                    {campoNorm} N/C
+                  </>
+                )}
               </p>
+              <button
+                onClick={() => setMostrarEntero(!mostrarEntero)}
+                className="px-3 py-1 rounded-full bg-sky-600 hover:bg-sky-500 text-white text-[10px]"
+              >
+                Cambiar a {mostrarEntero ? "notación científica" : "entero"}
+              </button>
               <p>
                 <span className="font-semibold">Dirección:</span>{" "}
                 {resultado.direccion}
               </p>
               <p className="text-[11px] text-gray-400">
-                q = {resultado.qInput} μC · r = {resultado.r} m
+                q = {resultado.qC.toExponential(3)} C · r = {resultado.r} m
               </p>
             </div>
           )}
@@ -337,31 +632,31 @@ function CampoElectricSimulator() {
       </div>
 
       <div className="grid md:grid-cols-2 gap-4 items-stretch">
-        <div className="rounded-xl border border-slate-700 bg-slate-900/80 p-3 flex flex-col">
+        <div className="rounded-xl border border-slate-600 bg-slate-800/80 p-3 flex flex-col">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[11px] px-2 py-1 rounded-full bg-slate-800 text-gray-300">
               Visualización 2D
             </span>
             {resultado && (
               <span className="text-[11px] text-amber-300 font-semibold">
-                {resultado.qInput >= 0 ? "Carga positiva" : "Carga negativa"}
+                {resultado.qC >= 0 ? "Carga positiva" : "Carga negativa"}
               </span>
             )}
           </div>
 
-          <div className="flex-1 relative flex items-center justify-center">
+            <div className="flex-1 relative flex items-center justify-center min-h-[12rem]">
             <div className="flex flex-col items-center gap-1">
               <div
                 className={`h-12 w-12 rounded-full flex items-center justify-center text-sm font-bold ${
-                  resultado && resultado.qInput < 0
+                  resultado && resultado.qC < 0
                     ? "bg-blue-500"
                     : "bg-red-500"
                 }`}
               >
-                {resultado && resultado.qInput < 0 ? "−" : "+"}
+                {resultado && resultado.qC < 0 ? "−" : "+"}
               </div>
               <div className="text-[10px] text-gray-300">
-                q = {q} μC
+                q = {q || "—"} C
               </div>
             </div>
 
@@ -369,8 +664,7 @@ function CampoElectricSimulator() {
               <div className="relative h-24 w-24">
                 {[...Array(8)].map((_, i) => {
                   const angle = (i / 8) * Math.PI * 2;
-                  const length = 30;
-                  const sign = resultado && resultado.qInput < 0 ? -1 : 1;
+                  const sign = resultado && resultado.qC < 0 ? -1 : 1;
 
                   return (
                     <div
@@ -396,7 +690,7 @@ function CampoElectricSimulator() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-700 bg-slate-900/80 p-3 flex flex-col">
+        <div className="rounded-xl border border-slate-600 bg-slate-800/80 p-3 flex flex-col">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[11px] px-2 py-1 rounded-full bg-slate-800 text-gray-300">
               Simulación 3D
@@ -411,7 +705,7 @@ function CampoElectricSimulator() {
             <Field3DScene
               minHeight={260}
               intensity={intensidad}
-              isNegative={resultado && resultado.qInput < 0}
+              isNegative={resultado && resultado.qC < 0}
             />
           </div>
         </div>
@@ -420,7 +714,9 @@ function CampoElectricSimulator() {
   );
 }
 
-//circuitos
+// =======================
+// 2.3 Corriente y Ley de Ohm
+// =======================
 
 function OhmSimulator() {
   const [showCircuitDraw, setShowCircuitDraw] = useState(false);
@@ -447,8 +743,8 @@ function OhmSimulator() {
       return;
     }
 
-    const I = Vnum / Rnum;          // A
-    const P = Vnum * I;             // W
+    const I = Vnum / Rnum; // A
+    const P = Vnum * I;    // W
 
     let nivel;
     if (I < 0.2) nivel = "Corriente baja";
@@ -466,9 +762,7 @@ function OhmSimulator() {
 
   if (showCircuitDraw) {
     return (
-      <CircuitDrawSimulator
-        onBack={() => setShowCircuitDraw(false)}
-      />
+      <CircuitDrawSimulator onBack={() => setShowCircuitDraw(false)} />
     );
   }
 
@@ -501,9 +795,7 @@ function OhmSimulator() {
         <span className="font-semibold"> R</span> en ohmios (Ω).
       </p>
 
-      {/* entradas y resultados */}
       <div className="grid md:grid-cols-2 gap-4 items-start">
-        {/* entradas y boton */}
         <div className="space-y-2 text-xs md:text-sm">
           <div className="grid grid-cols-2 gap-2">
             <label className="flex flex-col col-span-2">
@@ -556,7 +848,6 @@ function OhmSimulator() {
           )}
         </div>
 
-        {/* explicacion breve */}
         <div className="text-[11px] md:text-xs text-gray-400 space-y-1">
           <p>
             • Si aumentas el voltaje V manteniendo R constante, la corriente I
@@ -572,8 +863,7 @@ function OhmSimulator() {
         </div>
       </div>
 
-      {/* visualización 2D (circuito) */}
-      <div className="rounded-xl border border-slate-700 bg-slate-900/80 p-3 flex flex-col gap-3">
+      <div className="rounded-2xl border border-slate-700 bg-slate-900/80 p-3 flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <span className="text-[11px] px-2 py-1 rounded-full bg-slate-800 text-gray-300">
             Visualización 2D
@@ -586,9 +876,7 @@ function OhmSimulator() {
         </div>
 
         <div className="flex flex-col gap-3 text-[11px] md:text-xs">
-          {/* circuito simple*/}
           <div className="relative w-full h-24 flex items-center justify-center">
-            {/* "bateria" */}
             <div className="absolute left-6 flex flex-col items-center gap-1">
               <div className="h-10 w-6 rounded-md bg-slate-800 border border-slate-500 flex flex-col justify-center">
                 <div className="h-1.5 w-4 bg-slate-200 mx-auto mb-1" />
@@ -599,7 +887,6 @@ function OhmSimulator() {
               </span>
             </div>
 
-            {/* resistores */}
             <div className="absolute right-6 flex flex-col items-center gap-1">
               <div className="h-4 w-10 bg-slate-300 rounded-sm" />
               <span className="text-[10px] text-gray-300">
@@ -607,13 +894,9 @@ function OhmSimulator() {
               </span>
             </div>
 
-            {/* cable superior */}
             <div className="absolute top-6 left-10 right-10 h-0.5 bg-slate-600" />
-
-            {/* cable inferior */}
             <div className="absolute bottom-6 left-10 right-10 h-0.5 bg-slate-600" />
 
-            {/* barra de corriente */}
             <div className="absolute inset-x-16 top-[22px] h-2 rounded-full bg-slate-800 overflow-hidden">
               <div
                 className={`h-full ${colorBarra} transition-all duration-500`}
@@ -621,7 +904,6 @@ function OhmSimulator() {
               />
             </div>
 
-            {/* flechas de sentido */}
             <div className="absolute top-[19px] right-[52px] w-0 h-0 border-t-4 border-b-4 border-l-8 border-t-transparent border-b-transparent border-l-slate-100" />
           </div>
 
@@ -633,15 +915,14 @@ function OhmSimulator() {
         </div>
       </div>
 
-      {/* boton para el editor de ciruitos */}
-      <div className="pt-2 border-t border-slate-700 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
-        <p className="text-[11px] md:text-xs text-gray-400 max-w-md">
+      <div className="pt-4 border-t border-slate-700 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <p className="text-sm md:text-sm text-gray-400 max-w-lg leading-relaxed">
           ¿Quieres diseñar tu propio circuito con cables, resistencias y una
           fuente y que el sistema detecte si es serie o paralelo?
         </p>
         <button
           onClick={() => setShowCircuitDraw(true)}
-          className="text-xs px-4 py-1.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold shadow-sm"
+          className="text-sm px-4 py-2 rounded-md bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold shadow-sm"
         >
           Abrir editor de circuitos de corriente continua
         </button>
@@ -650,8 +931,24 @@ function OhmSimulator() {
   );
 }
 
+// =======================
+// Componente principal
+// =======================
+
 export default function Electricidad({ is3D }) {
-  const [subtema, setSubtema] = useState("coulomb");
+  const [subtema, setSubtema] = useState(() => {
+    try {
+      return localStorage.getItem("electricidad:tab") || "coulomb";
+    } catch (e) {
+      return "coulomb";
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("electricidad:tab", subtema);
+    } catch (e) {}
+  }, [subtema]);
 
   const subtemas = [
     { id: "coulomb", label: "2.1 Ley de Coulomb" },
@@ -667,33 +964,30 @@ export default function Electricidad({ is3D }) {
       id="electricidad"
       className="max-w-6xl mx-auto px-4 py-10 md:py-12 space-y-5"
     >
-      {}
-      <header className="space-y-1">
-        <h2 className="text-2xl md:text-3xl font-bold">⚡ Electricidad</h2>
-        <p className="text-xs md:text-sm text-gray-300">
-          Competencia: el estudiante resuelve problemas identificando tipos de
-          carga eléctrica, aplicando la Ley de Ohm, resolviendo circuitos de
-          corriente continua y prediciendo el comportamiento de cargas en campos
-          eléctricos.
+      <header className="space-y-2">
+        <h2 className="text-2xl md:text-3xl font-extrabold text-yellow-400">⚡ Electricidad</h2>
+        <p className="text-sm text-gray-300 leading-relaxed">
+          En este apartado el estudiante resuelve problemas identificando tipos de
+          carga eléctrica, aplicando la Ley de Ohm y resolviendo circuitos de
+          corriente continua.
         </p>
-        <p className="text-[11px] text-gray-400">
+        <p className="text-sm text-gray-400">
           Subtema actual:&nbsp;
           <span className="font-semibold text-sky-400">{etiquetaActual}</span>
         </p>
       </header>
 
-      {}
-      <div className="rounded-2xl border border-slate-700 bg-slate-900/80 p-3">
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+      <div className="rounded-3xl bg-slate-900/60 border border-slate-700 p-4 md:p-5">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {subtemas.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setSubtema(tab.id)}
-              className={`text-[11px] md:text-xs px-3 py-2 rounded-full font-medium transition
+              className={`text-sm px-4 py-2 rounded-lg font-semibold transition-colors duration-150
                 ${
                   subtema === tab.id
-                    ? "bg-primary text-white shadow-sm"
-                    : "bg-slate-800/80 text-slate-200 hover:bg-slate-700"
+                    ? "bg-primary text-white shadow-md"
+                    : "bg-slate-800/70 text-slate-200 hover:bg-slate-700"
                 }`}
             >
               {tab.label}
@@ -702,13 +996,9 @@ export default function Electricidad({ is3D }) {
         </div>
       </div>
 
-      {}
       {subtema === "coulomb" && <CoulombSimulator is3D={is3D} />}
-
       {subtema === "campo" && <CampoElectricSimulator is3D={is3D} />}
-
       {subtema === "ohm" && <OhmSimulator />}
-
     </section>
   );
 }

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import Navbar from "./components/Navbar";
 import Home from "./components/Home";
 import Electricidad from "./components/Electricidad";
+import ChatGemini from "./components/ChatGemini";
 
 export default function App() {
   const [section, setSection] = useState("inicio");
@@ -45,6 +46,7 @@ export default function App() {
       <footer className="border-t border-slate-200 dark:border-slate-800 py-4 text-center text-[11px] text-gray-500 dark:text-gray-400">
         Electricidad · {new Date().getFullYear()}
       </footer>
+      <ChatGemini />
     </div>
   );
 }

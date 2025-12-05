@@ -37,52 +37,46 @@ export default function Field3DScene({ minHeight = 260, intensity = 0.4, isNegat
     charge.position.set(0, 0, 0);
     scene.add(charge);
 
-    // Flechas radiales (líneas de campo)
+    // Flechas radiales con ArrowHelper (dirección del campo)
     const fieldGroup = new THREE.Group();
-    const coneGeom = new THREE.ConeGeometry(0.05, 0.25, 12);
-    const fieldMat = new THREE.MeshBasicMaterial({ color: 0xffdd55 });
-
     const clamped = Math.min(1, Math.max(0, intensity));
-    const nRays = 24; // número de líneas
+    const nArrows = 28;
+    const radius = 1.2;
+    const arrowLength = 0.55 + clamped * 0.4;
+    const headLength = 0.18 + clamped * 0.12;
+    const headWidth = 0.08 + clamped * 0.05;
+    const color = isNegative ? 0x60a5fa : 0xfbbf24;
 
-    for (let i = 0; i < nRays; i++) {
-      const angle = (i / nRays) * Math.PI * 2;
-      const r = 1.4;
-      const x = Math.cos(angle) * r;
-      const z = Math.sin(angle) * r;
-
-      const cone = new THREE.Mesh(coneGeom, fieldMat);
-      cone.position.set(x, 0, z);
-
-      if (isNegative) {
-        // Hacia la carga
-        cone.lookAt(charge.position);
-      } else {
-        // Hacia afuera
-        const outward = new THREE.Vector3(x * 2, 0, z * 2);
-        cone.lookAt(outward);
-      }
-
-      cone.scale.set(1, 1 + clamped * 2, 1);
-      fieldGroup.add(cone);
+    for (let i = 0; i < nArrows; i++) {
+      const angle = (i / nArrows) * Math.PI * 2;
+      const dir = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle));
+      const origin = dir.clone().multiplyScalar(radius);
+      const sense = isNegative ? dir.clone().multiplyScalar(-1) : dir.clone();
+      const arrow = new THREE.ArrowHelper(sense.normalize(), origin, arrowLength, color, headLength, headWidth);
+      fieldGroup.add(arrow);
     }
 
     scene.add(fieldGroup);
 
-    // Partículas suaves alrededor
-    const particleGeom = new THREE.SphereGeometry(0.03, 8, 8);
-    const particleMat = new THREE.MeshBasicMaterial({ color: 0xffaa33 });
+    // Partículas de flujo radial (salen si q>0, entran si q<0)
+    const particleGeom = new THREE.SphereGeometry(0.025, 8, 8);
+    const particleMat = new THREE.MeshBasicMaterial({ color: isNegative ? 0x60a5fa : 0xfbbf24 });
     const particles = new THREE.Group();
-    for (let i = 0; i < 80; i++) {
-      const p = new THREE.Mesh(particleGeom, particleMat);
-      p.position.set(
-        (Math.random() - 0.5) * 5,
-        (Math.random() - 0.3) * 2,
-        (Math.random() - 0.5) * 5
-      );
-      particles.add(p);
-    }
     scene.add(particles);
+
+    const flow = [];
+    const count = 110;
+    function spawnParticle() {
+      const r0 = isNegative ? 1.6 + Math.random() * 0.6 : 0.35 + Math.random() * 0.2;
+      const theta = Math.random() * Math.PI * 2;
+      const pos = new THREE.Vector3(Math.cos(theta) * r0, (Math.random() - 0.5) * 0.15, Math.sin(theta) * r0);
+      const m = new THREE.Mesh(particleGeom, particleMat);
+      m.position.copy(pos);
+      particles.add(m);
+      const lifeMax = 3 + Math.random() * 2;
+      return { m, life: 0, lifeMax };
+    }
+    for (let i = 0; i < count; i++) flow.push(spawnParticle());
 
     const clock = new THREE.Clock();
     let id;
@@ -90,11 +84,28 @@ export default function Field3DScene({ minHeight = 260, intensity = 0.4, isNegat
       id = requestAnimationFrame(animate);
       const t = clock.getElapsedTime();
 
-      const speed = 0.25 + clamped * 1.2;
-      fieldGroup.rotation.y += 0.002 * speed;
-      particles.rotation.y += 0.0015 * speed;
+      const speed = 0.35 + clamped * 1.4;
+      fieldGroup.rotation.y += 0.0015 * speed;
 
       charge.position.y = 0.05 * Math.sin(t * 2);
+
+      // Movimiento radial de partículas
+      const dt = 0.016;
+      const k = 0.6 + clamped * 1.6;
+      for (let i = 0; i < flow.length; i++) {
+        const p = flow[i];
+        const v = new THREE.Vector3().subVectors(p.m.position, charge.position);
+        const dist = Math.max(0.2, v.length());
+        v.normalize();
+        if (isNegative) v.multiplyScalar(-1); // entrar hacia la carga
+        const falloff = 1.2 / (dist * dist);
+        p.m.position.addScaledVector(v, dt * k * falloff);
+        p.life += dt;
+        if (p.life > p.lifeMax || p.m.position.length() > 3.2 || p.m.position.length() < 0.25) {
+          particles.remove(p.m);
+          flow[i] = spawnParticle();
+        }
+      }
 
       renderer.render(scene, camera);
     };

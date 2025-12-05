@@ -27,14 +27,31 @@ function findNearbyNode(nodes, x, y, tol = 10) {
   return null;
 }
 
-// coord pant → viewBox
+// coord pantalla → SVG usando CTM (robusto ante escalados y scroll)
 function getSvgCoords(svgEl, evt) {
-  const rect = svgEl.getBoundingClientRect();
-  const xClient = evt.clientX - rect.left;
-  const yClient = evt.clientY - rect.top;
-  const scaleX = VIEWBOX_WIDTH / rect.width;
-  const scaleY = VIEWBOX_HEIGHT / rect.height;
-  return { x: xClient * scaleX, y: yClient * scaleY };
+  const pt = svgEl.createSVGPoint();
+  pt.x = evt.clientX;
+  pt.y = evt.clientY;
+  const ctm = svgEl.getScreenCTM();
+  if (!ctm) return { x: 0, y: 0 };
+  const inv = ctm.inverse();
+  const sp = pt.matrixTransform(inv);
+  return { x: sp.x, y: sp.y };
+}
+
+// distancia punto-segmento (coordenadas en viewBox)
+function distancePointToSegment(p, a, b) {
+  const vx = b.x - a.x;
+  const vy = b.y - a.y;
+  const wx = p.x - a.x;
+  const wy = p.y - a.y;
+  const c1 = vx * wx + vy * wy;
+  if (c1 <= 0) return Math.hypot(p.x - a.x, p.y - a.y);
+  const c2 = vx * vx + vy * vy;
+  if (c2 <= c1) return Math.hypot(p.x - b.x, p.y - b.y);
+  const t = c1 / c2;
+  const proj = { x: a.x + t * vx, y: a.y + t * vy };
+  return Math.hypot(p.x - proj.x, p.y - proj.y);
 }
 
 /* ------------ Análisis de circuito (igual que antes) ------------ */
@@ -271,11 +288,12 @@ function analyzeCircuit(nodes, elements, voltage) {
 /* -------------------- Componente principal -------------------- */
 
 export default function CircuitDrawSimulator({ onBack }) {
-  const [tool, setTool] = useState("wire"); // wire | resistor | source | erase
+  const [tool, setTool] = useState("wire"); // select | wire | resistor | source | erase
   const [nodes, setNodes] = useState([]);
   const [elements, setElements] = useState([]);
   const [activeNodeId, setActiveNodeId] = useState(null);
   const [hoverNodeId, setHoverNodeId] = useState(null);
+  const [selectedElId, setSelectedElId] = useState(null);
 
   const [voltage, setVoltage] = useState("10");
   const [analysis, setAnalysis] = useState(null);
@@ -288,6 +306,7 @@ export default function CircuitDrawSimulator({ onBack }) {
   const [drawCurrent, setDrawCurrent] = useState(null);
 
   const svgRef = useRef(null);
+  const dragRef = useRef(null); // {mode:'move', elId, n1, n2, start:{x,y}, startPos:{}}
 
   /* --------- Eventos tipo Paint --------- */
 
@@ -296,39 +315,110 @@ export default function CircuitDrawSimulator({ onBack }) {
     const { x, y } = getSvgCoords(svgRef.current, evt);
     const { x: sx, y: sy } = snapToGrid(x, y);
 
+    // 🖱 seleccionar
+    if (tool === "select") {
+      const p = { x: sx, y: sy };
+      const thr = 8;
+      let nearest = { id: null, dist: Infinity };
+      for (const el of elements) {
+        const n1 = nodes.find((n) => n.id === el.n1);
+        const n2 = nodes.find((n) => n.id === el.n2);
+        if (!n1 || !n2) continue;
+        const d = distancePointToSegment(p, n1, n2);
+        if (d < nearest.dist) nearest = { id: el.id, dist: d };
+      }
+      if (nearest.id && nearest.dist <= thr) {
+        setSelectedElId(nearest.id);
+        setStatusMsg(`Seleccionado: ${nearest.id}`);
+        const el = elements.find((e) => e.id === nearest.id);
+        if (el) {
+          const n1 = nodes.find((n) => n.id === el.n1);
+          const n2 = nodes.find((n) => n.id === el.n2);
+          if (n1 && n2) {
+            dragRef.current = {
+              mode: 'move',
+              elId: el.id,
+              n1: el.n1,
+              n2: el.n2,
+              start: { x: sx, y: sy },
+              startPos: {
+                [el.n1]: { x: n1.x, y: n1.y },
+                [el.n2]: { x: n2.x, y: n2.y },
+              },
+            };
+          }
+        }
+      } else {
+        setSelectedElId(null);
+        setStatusMsg("Nada seleccionado");
+      }
+      return;
+    }
+
     // 🧹 borrar
     if (tool === "erase") {
       const p = { x: sx, y: sy };
-      const thr = 10;
+      const hitSegThr = 8; // umbral para golpear segmentos
+      const hitNodeThr = 8; // umbral para golpear nodos
 
-      setElements((prevEls) => {
-        const newEls = prevEls.filter((el) => {
-          const n1 = nodes.find((n) => n.id === el.n1);
-          const n2 = nodes.find((n) => n.id === el.n2);
-          if (!n1 || !n2) return false;
-          const minX = Math.min(n1.x, n2.x) - thr;
-          const maxX = Math.max(n1.x, n2.x) + thr;
-          const minY = Math.min(n1.y, n2.y) - thr;
-          const maxY = Math.max(n1.y, n2.y) + thr;
-          const hit =
-            p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY;
-          return !hit;
-        });
+      // 1) intentar borrar el elemento más cercano por distancia a su segmento
+      let nearest = { id: null, dist: Infinity };
+      for (const el of elements) {
+        const n1 = nodes.find((n) => n.id === el.n1);
+        const n2 = nodes.find((n) => n.id === el.n2);
+        if (!n1 || !n2) continue;
+        const d = distancePointToSegment(p, n1, n2);
+        if (d < nearest.dist) nearest = { id: el.id, dist: d };
+      }
 
-        // ❌ limpiar nodos huérfanos
-        setNodes((prevNodes) => {
-          const used = new Set();
-          newEls.forEach((el) => {
-            used.add(el.n1);
-            used.add(el.n2);
+      if (nearest.id && nearest.dist <= hitSegThr) {
+        setElements((prevEls) => {
+          const newEls = prevEls.filter((el) => el.id !== nearest.id);
+          // limpiar nodos huérfanos tras eliminar el elemento
+          setNodes((prevNodes) => {
+            const used = new Set();
+            newEls.forEach((el) => {
+              used.add(el.n1);
+              used.add(el.n2);
+            });
+            return prevNodes.filter((n) => used.has(n.id));
           });
-          return prevNodes.filter((n) => used.has(n.id));
+          return newEls;
         });
+        setStatusMsg("Elemento borrado.");
+        return;
+      }
 
-        return newEls;
-      });
+      // 2) si no hay segmento cerca, intentar borrar un nodo y sus conexiones
+      let nearestNode = null;
+      let bestDn = Infinity;
+      for (const n of nodes) {
+        const d = Math.hypot(p.x - n.x, p.y - n.y);
+        if (d < bestDn) {
+          bestDn = d;
+          nearestNode = n;
+        }
+      }
 
-      setStatusMsg("Elemento borrado (si había alguno cercano).");
+      if (nearestNode && bestDn <= hitNodeThr) {
+        const nodeId = nearestNode.id;
+        setElements((prevEls) => {
+          const newEls = prevEls.filter((el) => el.n1 !== nodeId && el.n2 !== nodeId);
+          setNodes((prevNodes) => {
+            const used = new Set();
+            newEls.forEach((el) => {
+              used.add(el.n1);
+              used.add(el.n2);
+            });
+            return prevNodes.filter((n) => used.has(n.id));
+          });
+          return newEls;
+        });
+        setStatusMsg("Nodo y conexiones borrados.");
+        return;
+      }
+
+      setStatusMsg("No se encontró nada para borrar en esa posición.");
       return;
     }
 
@@ -356,10 +446,27 @@ export default function CircuitDrawSimulator({ onBack }) {
 
     if (isDrawing) {
       setDrawCurrent({ x: sx, y: sy });
+    } else if (dragRef.current && dragRef.current.mode === 'move') {
+      const { start, startPos, n1, n2 } = dragRef.current;
+      const dx = sx - start.x;
+      const dy = sy - start.y;
+      const p1 = { x: startPos[n1].x + dx, y: startPos[n1].y + dy };
+      const p2 = { x: startPos[n2].x + dx, y: startPos[n2].y + dy };
+      const s1 = snapToGrid(p1.x, p1.y);
+      const s2 = snapToGrid(p2.x, p2.y);
+      setNodes((prev) =>
+        prev.map((nd) =>
+          nd.id === n1 ? { ...nd, x: s1.x, y: s1.y } : nd.id === n2 ? { ...nd, x: s2.x, y: s2.y } : nd
+        )
+      );
     }
   };
 
   const handleMouseUp = (evt) => {
+    if (dragRef.current && dragRef.current.mode === 'move') {
+      dragRef.current = null;
+      return;
+    }
     if (!isDrawing || !svgRef.current || !drawStart) return;
     const { x, y } = getSvgCoords(svgRef.current, evt);
     const { x: sx, y: sy } = snapToGrid(x, y);
@@ -457,6 +564,7 @@ export default function CircuitDrawSimulator({ onBack }) {
       <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2 text-[11px] md:text-xs">
         <span className="text-gray-300 mr-1">Herramientas:</span>
         {[
+          { id: "select", label: "Seleccionar" },
           { id: "wire", label: "Cable" },
           { id: "resistor", label: "Resistencia" },
           { id: "source", label: "Fuente DC" },
@@ -544,6 +652,7 @@ export default function CircuitDrawSimulator({ onBack }) {
               const midY = (n1.y + n2.y) / 2;
 
               if (el.type === "wire") {
+                const isSel = selectedElId === el.id;
                 return (
                   <line
                     key={el.id}
@@ -551,14 +660,15 @@ export default function CircuitDrawSimulator({ onBack }) {
                     y1={n1.y}
                     x2={n2.x}
                     y2={n2.y}
-                    stroke="#22c1dc"
-                    strokeWidth="3"
+                    stroke={isSel ? "#a5b4fc" : "#22c1dc"}
+                    strokeWidth={isSel ? 4 : 3}
                     strokeLinecap="round"
                   />
                 );
               }
 
               if (el.type === "resistor") {
+                const isSel = selectedElId === el.id;
                 const isHorizontal =
                   Math.abs(n1.y - n2.y) < Math.abs(n1.x - n2.x);
                 const zig = [];
@@ -583,8 +693,8 @@ export default function CircuitDrawSimulator({ onBack }) {
                     <polyline
                       points={zig.join(" ")}
                       fill="none"
-                      stroke="#f97316"
-                      strokeWidth="3"
+                      stroke={isSel ? "#fbbf24" : "#f97316"}
+                      strokeWidth={isSel ? 4 : 3}
                       strokeLinecap="round"
                     />
                     <text
@@ -593,6 +703,8 @@ export default function CircuitDrawSimulator({ onBack }) {
                       fontSize="11"
                       fill="#facc15"
                       textAnchor="middle"
+                      pointerEvents="none"
+                      style={{ userSelect: 'none' }}
                     >
                       {el.value} Ω
                     </text>
@@ -601,12 +713,16 @@ export default function CircuitDrawSimulator({ onBack }) {
               }
 
               if (el.type === "source") {
+                const isSel = selectedElId === el.id;
                 // batería
                 const isHorizontal =
                   Math.abs(n1.y - n2.y) < Math.abs(n1.x - n2.x);
                 const plateSpacing = 14;
                 const longLen = 26;
                 const shortLen = 14;
+                const vLabel = Number(voltage) || el.value || 0;
+                const wireStroke = isSel ? "#a5b4fc" : "#22c1dc";
+                const wireWidth = isSel ? 4 : 3;
 
                 if (isHorizontal) {
                   return (
@@ -617,8 +733,8 @@ export default function CircuitDrawSimulator({ onBack }) {
                         y1={n1.y}
                         x2={midX - plateSpacing}
                         y2={midY}
-                        stroke="#22c1dc"
-                        strokeWidth="3"
+                        stroke={wireStroke}
+                        strokeWidth={wireWidth}
                         strokeLinecap="round"
                       />
                       <line
@@ -626,8 +742,8 @@ export default function CircuitDrawSimulator({ onBack }) {
                         y1={midY}
                         x2={n2.x}
                         y2={n2.y}
-                        stroke="#22c1dc"
-                        strokeWidth="3"
+                        stroke={wireStroke}
+                        strokeWidth={wireWidth}
                         strokeLinecap="round"
                       />
                       {}
@@ -637,7 +753,7 @@ export default function CircuitDrawSimulator({ onBack }) {
                         x2={midX - plateSpacing / 2}
                         y2={midY + longLen / 2}
                         stroke="#e5e7eb"
-                        strokeWidth="3"
+                        strokeWidth={wireWidth}
                       />
                       {}
                       <line
@@ -646,7 +762,7 @@ export default function CircuitDrawSimulator({ onBack }) {
                         x2={midX + plateSpacing / 2}
                         y2={midY + shortLen / 2}
                         stroke="#9ca3af"
-                        strokeWidth="2.5"
+                        strokeWidth={wireWidth - 0.5}
                       />
                       <text
                         x={midX}
@@ -654,8 +770,10 @@ export default function CircuitDrawSimulator({ onBack }) {
                         fontSize="11"
                         fill="#4ade80"
                         textAnchor="middle"
+                        pointerEvents="none"
+                        style={{ userSelect: 'none' }}
                       >
-                        {el.value} V
+                        {vLabel} V
                       </text>
                     </g>
                   );
@@ -668,8 +786,8 @@ export default function CircuitDrawSimulator({ onBack }) {
                         y1={n1.y}
                         x2={n1.x}
                         y2={midY - plateSpacing}
-                        stroke="#22c1dc"
-                        strokeWidth="3"
+                        stroke={wireStroke}
+                        strokeWidth={wireWidth}
                         strokeLinecap="round"
                       />
                       <line
@@ -677,8 +795,8 @@ export default function CircuitDrawSimulator({ onBack }) {
                         y1={midY + plateSpacing}
                         x2={n2.x}
                         y2={n2.y}
-                        stroke="#22c1dc"
-                        strokeWidth="3"
+                        stroke={wireStroke}
+                        strokeWidth={wireWidth}
                         strokeLinecap="round"
                       />
                       {}
@@ -688,7 +806,7 @@ export default function CircuitDrawSimulator({ onBack }) {
                         x2={midX + longLen / 2}
                         y2={midY - plateSpacing / 2}
                         stroke="#e5e7eb"
-                        strokeWidth="3"
+                        strokeWidth={wireWidth}
                       />
                       {}
                       <line
@@ -697,15 +815,17 @@ export default function CircuitDrawSimulator({ onBack }) {
                         x2={midX + shortLen / 2}
                         y2={midY + plateSpacing / 2}
                         stroke="#9ca3af"
-                        strokeWidth="2.5"
+                        strokeWidth={wireWidth - 0.5}
                       />
                       <text
                         x={midX + longLen / 2 + 6}
                         y={midY + 4}
                         fontSize="11"
                         fill="#4ade80"
+                        pointerEvents="none"
+                        style={{ userSelect: 'none' }}
                       >
-                        {el.value} V
+                        {vLabel} V
                       </text>
                     </g>
                   );
