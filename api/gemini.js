@@ -1,6 +1,12 @@
 export default async function handler(req, res) {
-  // CORS - permitir llamadas desde el frontend (ajusta el origen si lo deseas)
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // CORS - permitir llamadas desde orígenes configurados en env var ALLOWED_ORIGINS
+  // ALLOWED_ORIGINS: lista separada por comas, por ejemplo: "https://midominio.com,https://otro.vercel.app"
+  const allowed = (process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+  const origin = req.headers.origin || req.headers.referer || '';
+  const originAllowed = allowed.length === 0 || allowed.includes(origin) || allowed.includes(new URL(origin || 'http://localhost').origin);
+  if (originAllowed) {
+    res.setHeader('Access-Control-Allow-Origin', origin || '*');
+  }
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
@@ -17,6 +23,13 @@ export default async function handler(req, res) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) {
     res.status(500).json({ error: 'GEMINI_API_KEY not configured on server' });
+    return;
+  }
+
+  // Verificar origen permitido en modo producción: si ALLOWED_ORIGINS está configurado,
+  // rechazamos peticiones cuyos Origin/Referer no estén en la lista.
+  if (allowed.length > 0 && !originAllowed) {
+    res.status(403).json({ error: 'Origin not allowed' });
     return;
   }
 
