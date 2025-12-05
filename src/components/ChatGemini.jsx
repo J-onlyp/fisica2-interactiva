@@ -286,15 +286,6 @@ export default function ChatGemini({
   return (
     <>
       {/* Botón flotante - solo mostrar si hay API key */}
-      {apiKey && (
-        <button
-          onClick={() => setOpen((v) => !v)}
-          className="fixed bottom-4 right-4 z-50 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-semibold shadow-lg px-4 py-2"
-          title="Abrir chat de IA"
-        >
-          {open ? "Cerrar IA" : "Chat IA"}
-        </button>
-      )}
 
       {/* Panel de chat (solo si hay API key) */}
       {open && apiKey && (
