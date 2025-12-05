@@ -34,11 +34,22 @@ function fetchWithTimeout(resource, options = {}, timeoutMs = 20000) {
 // Añadir esta función (por ejemplo, debajo de fetchWithTimeout)
 async function uploadFilesToServer(filesArray) {
   // filesArray: Array de File (file input)
-  // Actualmente no hay un endpoint de subida implementado en el proxy,
-  // por tanto devolvemos una lista vacía para no bloquear el envío.
-  // Si se implementa `/api/upload` en el backend/serverless, se debe
-  // reimplementar esta función para enviar los archivos y devolver URLs.
-  return [];
+  if (!filesArray || filesArray.length === 0) return [];
+  const fd = new FormData();
+  filesArray.forEach((f) => fd.append("files", f));
+  try {
+    const resp = await fetch("/api/upload", {
+      method: "POST",
+      body: fd,
+    });
+    if (!resp.ok) throw new Error("Upload failed");
+    const j = await resp.json();
+    // Espera: { files: [{ name, url, size, type }] }
+    return Array.isArray(j.files) ? j.files : [];
+  } catch (err) {
+    console.error("uploadFilesToServer:", err);
+    return [];
+  }
 }
 
 export default function ChatGemini({
@@ -54,9 +65,7 @@ export default function ChatGemini({
     { role: "model", text: "Hola, soy Gemini. ¿En qué puedo ayudarte?" },
   ]);
 
-  const useProxy = import.meta.env.VITE_GEMINI_USE_PROXY === 'true';
-  const apiKey = useProxy ? "__using_proxy__" : import.meta.env.VITE_GEMINI_API_KEY;
-  const proxyUrlEnv = import.meta.env.VITE_GEMINI_PROXY_URL || null;
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
   const listRef = useRef(null);
 
   // lista dinámica de modelos; inicializa con DEFAULT_MODEL_CANDIDATES
@@ -68,7 +77,7 @@ export default function ChatGemini({
   const canSend = useMemo(() => (!!input.trim() || attachments.length > 0) && !loading && !!apiKey, [input, loading, apiKey, attachments]);
 
   useEffect(() => {
-    if (!apiKey || useProxy) return;
+    if (!apiKey) return;
     async function listModels() {
       try {
         const url = `https://generativelanguage.googleapis.com/v1/models?key=${apiKey}`;
@@ -92,31 +101,9 @@ export default function ChatGemini({
       }
     }
     listModels();
-  }, [apiKey, useProxy]);
+  }, [apiKey]);
 
   async function callGemini(model, contents) {
-    // Si estamos en modo proxy, delegamos la llamada al endpoint serverless
-    if (useProxy) {
-      try {
-        const proxyBase = proxyUrlEnv || '/api/gemini';
-        const url = proxyBase.endsWith('/api/gemini') ? proxyBase : `${proxyBase.replace(/\/+$/, '')}/api/gemini`;
-        const resp = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model, contents }),
-        });
-        if (!resp.ok) {
-          const text = await resp.text().catch(() => "Error al comunicarse con el proxy");
-          throw new Error(text || "Error en proxy");
-        }
-        const j = await resp.json();
-        return j.text || j.result || "(Sin respuesta del proxy)";
-      } catch (err) {
-        throw err;
-      }
-    }
-
-    // Modo directo (cliente) — comportamiento previo
     const modelName = model.startsWith("models/") ? model : `models/${model}`;
     const endpoints = ["generateContent", "generateText", "generateMessage"];
     let lastErr = null;
@@ -286,16 +273,9 @@ export default function ChatGemini({
   return (
     <>
       {/* Botón flotante - solo mostrar si hay API key */}
-      {apiKey && (
-        <button
-          onClick={() => setOpen((v) => !v)}
-          className="fixed bottom-4 right-4 z-50 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-semibold shadow-lg px-4 py-2"
-          title="Abrir chat de IA"
-        >
-          {open ? "Cerrar IA" : "Chat IA"}
-        </button>
-      )}
+    
 
+     
       {/* Panel de chat (solo si hay API key) */}
       {open && apiKey && (
         <div className="fixed bottom-20 right-4 z-50 w-96 max-h-[80vh] rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50/80 dark:bg-slate-800/95 text-slate-900 dark:text-slate-100 shadow-2xl flex flex-col">

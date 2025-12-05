@@ -28,11 +28,12 @@ jobs:
     - name: Install dependencies
       run: npm install
     
+    - name: Create env file
+      run: |
+        echo "VITE_GEMINI_API_KEY=${{ secrets.VITE_GEMINI_API_KEY }}" > .env.local
+    
     - name: Build
       run: npm run build
-      env:
-        # Proxy URL is not secret, but keep it in Secrets to make the workflow configurable.
-        VITE_GEMINI_PROXY_URL: ${{ secrets.VITE_GEMINI_PROXY_URL }}
     
     - name: Deploy to gh-pages
       uses: peaceiris/actions-gh-pages@v3
